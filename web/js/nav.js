@@ -50,6 +50,10 @@ function onGlobalDateChange() {
     if (tm) tm.value = mv;
   }
 
+  _currentSettings['globalYear'] = yv;
+  _currentSettings['globalMonth'] = mv;
+  saveSettingsDebounced();
+
   const view = _currentView;
   if (view === 'members') loadMembers({ animate: false });
   else if (view === 'orders') loadOrders({ animate: false });

@@ -5,6 +5,20 @@
   try {
     await loadSettings(); // 加载用户设置到 _currentSettings（从数据库优先）
     initMonthPickers();
+
+    if (_currentSettings.globalYear && _currentSettings.globalMonth) {
+      const gy = document.getElementById('globalYear');
+      const gm = document.getElementById('globalMonth');
+      if (gy) gy.value = _currentSettings.globalYear;
+      if (gm) gm.value = _currentSettings.globalMonth;
+      for (const sel of Object.values(_PAGE_DATE_SELECTORS)) {
+        const ty = document.getElementById(sel[0]);
+        const tm = document.getElementById(sel[1]);
+        if (ty) ty.value = _currentSettings.globalYear;
+        if (tm) tm.value = _currentSettings.globalMonth;
+      }
+    }
+
     await initQcSwitch();
     // 预加载自定义字体的 @font-face（确保 applyAllSettings 时字体已可用）
     try { await loadCustomFontsList(); } catch(e) { console.log('预加载字体失败:', e); }
