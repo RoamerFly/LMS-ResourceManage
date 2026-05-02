@@ -403,12 +403,10 @@ function _getQcRows(el) {
   return Array.from(table.querySelectorAll('tbody tr[data-row-key]'));
 }
 
-function _getQcPriceCells(rowKey) {
-  return Array.from(document.querySelectorAll(`.qc-price-input[data-row-key="${rowKey}"]`));
-}
-
-function _getQcQtyCells(rowKey) {
-  return Array.from(document.querySelectorAll(`.qc-qty-input[data-row-key="${rowKey}"]`));
+function _getQcAllInputs(rowKey) {
+  const priceCells = Array.from(document.querySelectorAll(`.qc-price-input[data-row-key="${rowKey}"]`));
+  const qtyCells = Array.from(document.querySelectorAll(`.qc-qty-input[data-row-key="${rowKey}"]`));
+  return [...priceCells, ...qtyCells];
 }
 
 function _focusQcCell(inputs, idx) {
@@ -418,39 +416,58 @@ function _focusQcCell(inputs, idx) {
 }
 
 function onQcPriceTab(e, el) {
-  const rowKey = el.dataset.rowKey;
-  const allRows = _getQcRows(el);
-  const rowIdx = allRows.findIndex(r => r.dataset.rowKey === rowKey);
-  if (rowIdx < 0) return;
-
   if (e.key === 'Tab') {
     e.preventDefault();
-    const priceCells = _getQcPriceCells(rowKey);
-    const curIdx = priceCells.indexOf(el);
+    const rowKey = el.dataset.rowKey;
+    const allRows = _getQcRows(el);
+    const rowIdx = allRows.findIndex(r => r.dataset.rowKey === rowKey);
+    if (rowIdx < 0) return;
+
+    const allInputs = _getQcAllInputs(rowKey);
+    const curIdx = allInputs.indexOf(el);
+    if (curIdx < 0) return;
 
     if (e.shiftKey) {
       if (curIdx > 0) {
-        _focusQcCell(priceCells, curIdx - 1);
+        allInputs[curIdx - 1].focus();
+      } else {
+        const prevRow = rowIdx > 0 ? allRows[rowIdx - 1] : allRows[allRows.length - 1];
+        const prevInputs = _getQcAllInputs(prevRow.dataset.rowKey);
+        prevInputs[prevInputs.length - 1].focus();
       }
-      return;
+    } else {
+      if (curIdx < allInputs.length - 1) {
+        allInputs[curIdx + 1].focus();
+      } else {
+        const nextRow = rowIdx < allRows.length - 1 ? allRows[rowIdx + 1] : allRows[0];
+        const nextInputs = _getQcAllInputs(nextRow.dataset.rowKey);
+        nextInputs[0].focus();
+      }
     }
-
-    if (curIdx < priceCells.length - 1) {
-      _focusQcCell(priceCells, curIdx + 1);
-      return;
-    }
-    const qtyCells = _getQcQtyCells(rowKey);
-    if (qtyCells.length > 0) qtyCells[0].focus();
   }
   else if (e.key === 'Enter') {
     e.preventDefault();
-    const priceCells = _getQcPriceCells(rowKey);
-    const colIdx = priceCells.indexOf(el);
+    const rowKey = el.dataset.rowKey;
+    const allRows = _getQcRows(el);
+    const rowIdx = allRows.findIndex(r => r.dataset.rowKey === rowKey);
+    if (rowIdx < 0) return;
+
+    const allInputs = _getQcAllInputs(rowKey);
+    const colIdx = allInputs.indexOf(el);
+    if (colIdx < 0) return;
 
     let targetRow = rowIdx + 1;
-    if (targetRow >= allRows.length) targetRow = 0;
+    let targetCol = colIdx;
 
-    _focusQcCell(_getQcPriceCells(allRows[targetRow].dataset.rowKey), colIdx);
+    if (targetRow >= allRows.length) {
+      targetRow = 0;
+      targetCol = colIdx + 1;
+      const maxCols = allRows.reduce((max, r) => Math.max(max, _getQcAllInputs(r.dataset.rowKey).length), 0);
+      if (targetCol >= maxCols) targetCol = 0;
+    }
+
+    const nextInputs = _getQcAllInputs(allRows[targetRow].dataset.rowKey);
+    _focusQcCell(nextInputs, targetCol);
   }
 }
 
@@ -479,39 +496,58 @@ function onQcQtyInput(el) {
 
 // ---- 对数 Tab/Enter 导航 ----
 function onQcQtyTab(e, el) {
-  const rowKey = el.dataset.rowKey;
-  const allRows = _getQcRows(el);
-  const rowIdx = allRows.findIndex(r => r.dataset.rowKey === rowKey);
-  if (rowIdx < 0) return;
-
   if (e.key === 'Tab') {
     e.preventDefault();
-    const qtyCells = _getQcQtyCells(rowKey);
-    const curIdx = qtyCells.indexOf(el);
+    const rowKey = el.dataset.rowKey;
+    const allRows = _getQcRows(el);
+    const rowIdx = allRows.findIndex(r => r.dataset.rowKey === rowKey);
+    if (rowIdx < 0) return;
+
+    const allInputs = _getQcAllInputs(rowKey);
+    const curIdx = allInputs.indexOf(el);
+    if (curIdx < 0) return;
 
     if (e.shiftKey) {
       if (curIdx > 0) {
-        _focusQcCell(qtyCells, curIdx - 1);
+        allInputs[curIdx - 1].focus();
       } else {
-        const priceCells = _getQcPriceCells(rowKey);
-        if (priceCells.length > 0) priceCells[priceCells.length - 1].focus();
+        const prevRow = rowIdx > 0 ? allRows[rowIdx - 1] : allRows[allRows.length - 1];
+        const prevInputs = _getQcAllInputs(prevRow.dataset.rowKey);
+        prevInputs[prevInputs.length - 1].focus();
       }
-      return;
-    }
-
-    if (curIdx < qtyCells.length - 1) {
-      _focusQcCell(qtyCells, curIdx + 1);
+    } else {
+      if (curIdx < allInputs.length - 1) {
+        allInputs[curIdx + 1].focus();
+      } else {
+        const nextRow = rowIdx < allRows.length - 1 ? allRows[rowIdx + 1] : allRows[0];
+        const nextInputs = _getQcAllInputs(nextRow.dataset.rowKey);
+        nextInputs[0].focus();
+      }
     }
   }
   else if (e.key === 'Enter') {
     e.preventDefault();
-    const qtyCells = _getQcQtyCells(rowKey);
-    const colIdx = qtyCells.indexOf(el);
+    const rowKey = el.dataset.rowKey;
+    const allRows = _getQcRows(el);
+    const rowIdx = allRows.findIndex(r => r.dataset.rowKey === rowKey);
+    if (rowIdx < 0) return;
+
+    const allInputs = _getQcAllInputs(rowKey);
+    const colIdx = allInputs.indexOf(el);
+    if (colIdx < 0) return;
 
     let targetRow = rowIdx + 1;
-    if (targetRow >= allRows.length) targetRow = 0;
+    let targetCol = colIdx;
 
-    _focusQcCell(_getQcQtyCells(allRows[targetRow].dataset.rowKey), colIdx);
+    if (targetRow >= allRows.length) {
+      targetRow = 0;
+      targetCol = colIdx + 1;
+      const maxCols = allRows.reduce((max, r) => Math.max(max, _getQcAllInputs(r.dataset.rowKey).length), 0);
+      if (targetCol >= maxCols) targetCol = 0;
+    }
+
+    const nextInputs = _getQcAllInputs(allRows[targetRow].dataset.rowKey);
+    _focusQcCell(nextInputs, targetCol);
   }
 }
 
