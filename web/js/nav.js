@@ -36,57 +36,27 @@ const _PAGE_DATE_SELECTORS = {
   banking: ['bankYear', 'bankMonth'],
 };
 
-function syncGlobalToSelector(yearId, monthId) {
-  const gy = document.getElementById('globalYear');
-  const gm = document.getElementById('globalMonth');
-  const ty = document.getElementById(yearId);
-  const tm = document.getElementById(monthId);
-  if (gy && ty) gy.value = ty.value;
-  if (gm && tm) gm.value = tm.value;
-}
-
 function onGlobalDateChange() {
   const gy = document.getElementById('globalYear');
   const gm = document.getElementById('globalMonth');
   if (!gy || !gm) return;
   const yv = gy.value;
   const mv = gm.value;
-  const view = _currentView;
-  const sel = _PAGE_DATE_SELECTORS[view];
-  if (sel) {
+
+  for (const sel of Object.values(_PAGE_DATE_SELECTORS)) {
     const ty = document.getElementById(sel[0]);
     const tm = document.getElementById(sel[1]);
     if (ty) ty.value = yv;
     if (tm) tm.value = mv;
   }
 
+  const view = _currentView;
   if (view === 'members') loadMembers({ animate: false });
   else if (view === 'orders') loadOrders({ animate: false });
   else if (view === 'work') loadWorkRecords();
   else if (view === 'salary') loadSalary({ animate: false });
   else if (view === 'quickcalc') initQuickCalc();
   else if (view === 'banking') loadBankAccounts({ animate: false });
-}
-
-function syncGlobalFromPageSelector(el) {
-  const view = _currentView;
-  const sel = _PAGE_DATE_SELECTORS[view];
-  if (!sel) return;
-  const gy = document.getElementById('globalYear');
-  const gm = document.getElementById('globalMonth');
-  const ty = document.getElementById(sel[0]);
-  const tm = document.getElementById(sel[1]);
-  if (gy && ty) gy.value = ty.value;
-  if (gm && tm) gm.value = tm.value;
-}
-
-function _attachGlobalSyncListeners() {
-  for (const sel of Object.values(_PAGE_DATE_SELECTORS)) {
-    const yEl = document.getElementById(sel[0]);
-    const mEl = document.getElementById(sel[1]);
-    if (yEl) yEl.addEventListener('change', () => syncGlobalFromPageSelector(yEl));
-    if (mEl) mEl.addEventListener('change', () => syncGlobalFromPageSelector(mEl));
-  }
 }
 
 // ============================================================
@@ -140,9 +110,6 @@ function _doNavigateTo(view) {
     settings: '系统设置',
   };
   document.getElementById('topbarTitle').textContent = titles[view] || view;
-
-  const sel = _PAGE_DATE_SELECTORS[view];
-  if (sel) syncGlobalToSelector(sel[0], sel[1]);
 
   if (view === 'overview' && typeof renderOverviewCards === 'function') renderOverviewCards();
   else if (view === 'members') loadMembers({ animate: false });
