@@ -1638,24 +1638,26 @@ tr:hover td { background: var(--surface-soft); }
   html, body {
     background: #fff !important;
     color: #000 !important;
-    height: auto;
+    height: auto !important;
     overflow: visible !important;
+    display: block !important;
   }
 
   body * {
-    visibility: hidden;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
   }
 
-  body.salary-print-mode #view-salary,
-  body.salary-print-mode #view-salary * {
-    visibility: visible;
+  .salary-print-sibling-hidden {
+    display: none !important;
   }
 
   body.salary-print-mode .sidebar,
   body.salary-print-mode .topbar,
   body.salary-print-mode .btn,
   body.salary-print-mode .month-picker,
-  body.salary-print-mode .btn-back-home {
+  body.salary-print-mode .btn-back-home,
+  body.salary-print-mode #view-salary .card-title {
     display: none !important;
   }
 
@@ -1663,16 +1665,25 @@ tr:hover td { background: var(--surface-soft); }
   body.salary-print-mode .content,
   body.salary-print-mode #view-salary,
   body.salary-print-mode #view-salary .card,
-  body.salary-print-mode #salaryContent {
+  body.salary-print-mode #salaryContent,
+  body.salary-print-mode .salary-report {
+    display: block !important;
     position: static !important;
+    float: none !important;
     width: 100% !important;
     max-width: none !important;
+    height: auto !important;
     margin: 0 !important;
     padding: 0 !important;
     border: none !important;
     box-shadow: none !important;
     overflow: visible !important;
     background: #fff !important;
+    flex: none !important;
+    flex-direction: initial !important;
+    align-items: initial !important;
+    justify-content: initial !important;
+    gap: initial !important;
   }
 
   body.salary-print-mode .salary-print-header {
@@ -1688,10 +1699,9 @@ tr:hover td { background: var(--surface-soft); }
   }
 
   body.salary-print-mode .dept-block {
-    break-inside: avoid;
-    page-break-inside: avoid;
     border: 1px solid #cbd5e1 !important;
     box-shadow: none !important;
+    overflow: visible !important;
   }
 
   body.salary-print-mode .dept-block-header {

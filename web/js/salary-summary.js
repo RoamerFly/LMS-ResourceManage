@@ -169,9 +169,56 @@ function printSalary(mode = 'color') {
 
   document.body.classList.add('salary-print-mode');
   document.body.classList.toggle('print-mono', mode === 'mono');
+
+  const sidebar = document.querySelector('.sidebar');
+  const topbar = document.querySelector('.topbar');
+  const viewSalary = document.getElementById('view-salary');
+  const cardTitle = viewSalary ? viewSalary.querySelector('.card-title') : null;
+  const backBtn = viewSalary ? viewSalary.querySelector('.btn-back-home') : null;
+
+  const hiddenEls = [sidebar, topbar, cardTitle, backBtn].filter(Boolean);
+  hiddenEls.forEach(el => { el.style.display = 'none'; });
+
+  const viewParent = viewSalary ? viewSalary.parentElement : null;
+  const savedSiblings = [];
+  if (viewParent) {
+    Array.from(viewParent.children).forEach(child => {
+      if (child !== viewSalary && child.style.display !== 'none') {
+        savedSiblings.push({ el: child, prev: child.style.display });
+        child.style.display = 'none';
+      }
+    });
+  }
+
+  const mainEl = document.querySelector('.main');
+  const contentEl = document.querySelector('.content');
+  const cardEl = viewSalary ? viewSalary.querySelector('.card') : null;
+  const printEls = [mainEl, contentEl, viewSalary, cardEl, content].filter(Boolean);
+  const savedStyles = printEls.map(el => ({
+    el,
+    display: el.style.display,
+    overflow: el.style.overflow,
+    position: el.style.position,
+    flex: el.style.flex,
+  }));
+  printEls.forEach(el => {
+    el.style.display = 'block';
+    el.style.overflow = 'visible';
+    el.style.position = 'static';
+    el.style.flex = 'none';
+  });
+
   const cleanup = () => {
     document.body.classList.remove('salary-print-mode');
     document.body.classList.remove('print-mono');
+    hiddenEls.forEach(el => { el.style.display = ''; });
+    savedSiblings.forEach(({ el, prev }) => { el.style.display = prev; });
+    savedStyles.forEach(({ el, display, overflow, position, flex }) => {
+      el.style.display = display;
+      el.style.overflow = overflow;
+      el.style.position = position;
+      el.style.flex = flex;
+    });
     window.removeEventListener('afterprint', cleanup);
   };
 
