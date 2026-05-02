@@ -130,6 +130,11 @@ async def api_save_bank_account(emp_id: int, body: dict):
     )
 
 
+@app.post("/api/bank-accounts/clear-all")
+async def api_clear_all_bank_accounts():
+    return crud.clear_all_bank_card_info()
+
+
 def _load_bank_name_map():
     global _bank_name_map
     if _bank_name_map is not None:

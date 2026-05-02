@@ -314,6 +314,19 @@ def save_employee_bank_account(
     return {"ok": True}
 
 
+def clear_all_bank_card_info():
+    conn = get_connection()
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM employee_bank_accounts WHERE card_no != '' OR bank_name != ''").fetchone()[0]
+        conn.execute("UPDATE employee_bank_accounts SET card_no='', bank_name='', updated_at=datetime('now') WHERE card_no != '' OR bank_name != ''")
+        conn.commit()
+        return {"ok": True, "cleared": count}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    finally:
+        conn.close()
+
+
 def _get_adjustment_items(conn, emp_id: int, year: int, month: int):
     rows = conn.execute("""
         SELECT id, emp_id, year, month, adj_date, adj_quantity, adj_amount, reason, created_at

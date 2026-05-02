@@ -471,3 +471,15 @@ const _bankMonthEl = document.getElementById('bankMonth');
 if (_bankYearEl) _bankYearEl.addEventListener('change', loadBankAccounts);
 if (_bankMonthEl) _bankMonthEl.addEventListener('change', loadBankAccounts);
 updateBankVisibilityButton();
+
+async function clearAllBankCardInfo() {
+  if (!confirm('确定要清空所有银行卡信息吗？\n\n将清除全部成员的银行卡号和开户行信息，此操作不可撤销。')) return;
+
+  const result = await post('/api/bank-accounts/clear-all');
+  if (result && result.ok) {
+    showToast(`已清空 ${result.cleared || 0} 条银行卡信息`, 'success');
+    await loadBankAccounts({ animate: false });
+  } else {
+    showToast((result && result.error) || '清空失败', 'error');
+  }
+}
