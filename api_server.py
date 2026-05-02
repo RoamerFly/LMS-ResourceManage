@@ -118,6 +118,11 @@ async def api_get_bank_accounts(
     return crud.get_employee_bank_accounts(year, month, source or "work")
 
 
+@app.post("/api/bank-accounts/clear-all")
+async def api_clear_all_bank_accounts():
+    return crud.clear_all_bank_card_info()
+
+
 @app.post("/api/bank-accounts/{emp_id}")
 async def api_save_bank_account(emp_id: int, body: dict):
     return crud.save_employee_bank_account(
@@ -128,11 +133,6 @@ async def api_save_bank_account(emp_id: int, body: dict):
         body.get("reserved_phone", ""),
         body.get("note", ""),
     )
-
-
-@app.post("/api/bank-accounts/clear-all")
-async def api_clear_all_bank_accounts():
-    return crud.clear_all_bank_card_info()
 
 
 def _load_bank_name_map():
