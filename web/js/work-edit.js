@@ -491,14 +491,21 @@ function onWorkCellKeydown(e, el) {
     const rowIdx = allRows.indexOf(tr);
     if (rowIdx < 0) return;
 
-    const colIdx = filterDataCells(tr).indexOf(el.closest("td"));
+    const dataCells = filterDataCells(tr);
+    const colIdx = dataCells.indexOf(el.closest("td"));
     if (colIdx < 0) return;
 
     let targetRow = rowIdx + 1;
-    if (targetRow >= allRows.length) targetRow = 0;
+    let targetCol = colIdx;
 
-    const nextCells = filterDataCells(allRows[targetRow]);
-    _focusCell(nextCells[colIdx], el);
+    if (targetRow >= allRows.length) {
+      targetRow = 0;
+      targetCol = colIdx + 1;
+      const maxCols = allRows.reduce((max, r) => Math.max(max, filterDataCells(r).length), 0);
+      if (targetCol >= maxCols) targetCol = 0;
+    }
+
+    _focusCell(filterDataCells(allRows[targetRow])[targetCol], el);
   }
 }
 
