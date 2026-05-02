@@ -378,7 +378,7 @@ function onWorkCellChange(el) {
 // onWorkCellKeydown：Tab 键在同行格之间跳转
 // ─────────────────────────────────────────────────────────
 function onWorkCellKeydown(e, el) {
-  if (e.key === 'Tab' || e.key === 'Enter') {
+  if (e.key === 'Enter') {
     e.preventDefault();
     const tables = document.querySelectorAll('#spreadsheetWrap table');
     if (!tables.length) return;
