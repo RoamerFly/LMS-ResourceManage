@@ -397,8 +397,10 @@ function onQcPriceInput(el) {
 }
 
 // ---- 单价 Tab/Enter 导航 ----
-function _getQcRows() {
-  return Array.from(document.querySelectorAll('#qcDeptTablesWrap tbody tr[data-row-key]'));
+function _getQcRows(el) {
+  const table = el.closest('table');
+  if (!table) return [];
+  return Array.from(table.querySelectorAll('tbody tr[data-row-key]'));
 }
 
 function _getQcPriceCells(rowKey) {
@@ -417,7 +419,7 @@ function _focusQcCell(inputs, idx) {
 
 function onQcPriceTab(e, el) {
   const rowKey = el.dataset.rowKey;
-  const allRows = _getQcRows();
+  const allRows = _getQcRows(el);
   const rowIdx = allRows.findIndex(r => r.dataset.rowKey === rowKey);
   if (rowIdx < 0) return;
 
@@ -478,7 +480,7 @@ function onQcQtyInput(el) {
 // ---- 对数 Tab/Enter 导航 ----
 function onQcQtyTab(e, el) {
   const rowKey = el.dataset.rowKey;
-  const allRows = _getQcRows();
+  const allRows = _getQcRows(el);
   const rowIdx = allRows.findIndex(r => r.dataset.rowKey === rowKey);
   if (rowIdx < 0) return;
 
