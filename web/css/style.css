@@ -178,6 +178,37 @@ h2, h3, .section-title { font-size: var(--font-size-14) !important; }
 }
 
 .topbar-title { font-size: var(--font-size-20); font-weight: 600; }
+.topbar-date-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 20px;
+  padding: 3px 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: var(--font-size-13);
+  flex-shrink: 0;
+}
+.topbar-date-selector select {
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font-size: var(--font-size-13);
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  outline: none;
+}
+.topbar-date-selector select:focus {
+  border-color: var(--primary);
+  background: var(--card-bg);
+}
+.topbar-date-selector span {
+  color: var(--text-muted);
+  font-size: var(--font-size-12);
+}
 .topbar-hint { font-size: var(--font-size-12); color: var(--text-muted); margin-left: auto; }
 
 /* Topbar 返回按钮 */

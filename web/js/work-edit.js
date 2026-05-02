@@ -378,16 +378,58 @@ function onWorkCellChange(el) {
 // onWorkCellKeydown：Tab 键在同行格之间跳转
 // ─────────────────────────────────────────────────────────
 function onWorkCellKeydown(e, el) {
-  if (e.key === 'Tab' && !e.shiftKey) {
+  if (e.key === 'Tab' || e.key === 'Enter') {
     e.preventDefault();
-    const rowId = el.dataset.row;
-    const allInputs = Array.from(
-      document.querySelectorAll(`#spreadsheetWrap td input[data-row="${rowId}"]`)
+    const tables = document.querySelectorAll('#spreadsheetWrap table');
+    if (!tables.length) return;
+    const allRows = [];
+    tables.forEach(t => t.querySelectorAll('tbody tr[data-row-key]').forEach(tr => allRows.push(tr)));
+    if (!allRows.length) return;
+
+    const tr = el.closest('tr');
+    const rowIdx = allRows.indexOf(tr);
+    if (rowIdx < 0) return;
+
+    const dataCells = Array.from(tr.querySelectorAll('td')).filter(td =>
+      !td.classList.contains('col-fixed') &&
+      !td.classList.contains('row-total') &&
+      td.querySelector('input[data-emp]')
     );
-    const curIdx = allInputs.indexOf(el);
-    if (curIdx >= 0) {
-      const nextIdx = (curIdx + 1) % allInputs.length;
-      allInputs[nextIdx].focus();
+    const colIdx = dataCells.indexOf(el.closest('td'));
+    if (colIdx < 0) return;
+
+    let targetRow = rowIdx + 1;
+    let targetCol = colIdx;
+
+    if (targetRow >= allRows.length) {
+      targetRow = 0;
+      targetCol = colIdx + 1;
+      const maxCols = allRows.reduce((max, r) => {
+        const cells = Array.from(r.querySelectorAll('td')).filter(td =>
+          !td.classList.contains('col-fixed') &&
+          !td.classList.contains('row-total') &&
+          td.querySelector('input[data-emp]')
+        );
+        return Math.max(max, cells.length);
+      }, 0);
+      if (targetCol >= maxCols) {
+        targetCol = 0;
+      }
+    }
+
+    const nextRow = allRows[targetRow];
+    if (!nextRow) return;
+    const nextCells = Array.from(nextRow.querySelectorAll('td')).filter(td =>
+      !td.classList.contains('col-fixed') &&
+      !td.classList.contains('row-total') &&
+      td.querySelector('input[data-emp]')
+    );
+    const nextTd = nextCells[targetCol];
+    if (!nextTd) return;
+    const nextInput = nextTd.querySelector('input[data-emp]');
+    if (nextInput) {
+      el.blur();
+      nextInput.focus();
     }
   }
 }

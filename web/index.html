@@ -81,6 +81,12 @@
       返回
     </button>
     <div class="topbar-title" id="topbarTitle">资源总览</div>
+    <div class="topbar-date-selector">
+      <select id="globalYear" onchange="onGlobalDateChange()"></select>
+      <span>年</span>
+      <select id="globalMonth" onchange="onGlobalDateChange()"></select>
+      <span>月</span>
+    </div>
     <div class="topbar-hint" id="topbarHint"></div>
   </div>
   <div class="content">
