@@ -20,7 +20,6 @@ const DEFAULT_SETTINGS = {
   text: '#1e293b',
   'sidebar-width': '220',
   'content-padding': '18',
-  'card-gap': '14',
   'window-width': '1400',
   'window-height': '900',
   'window-resolution': '1400x900',
@@ -282,9 +281,6 @@ function applySetting(key, value, skipSave = false) {
     case 'content-padding':
       root.style.setProperty('--content-padding', value + 'px');
       break;
-    case 'card-gap':
-      root.style.setProperty('--card-gap', value + 'px');
-      break;
     case 'fontFamily':
       // 直接设置字体族，font-family 值本身可以包含引号，无需再外套
       root.style.setProperty('--font-family', value);
@@ -314,11 +310,9 @@ function applySetting(key, value, skipSave = false) {
     case 'table-compact':
       if (value) {
         root.style.setProperty('--content-padding', '10px');
-        root.style.setProperty('--card-gap', '8px');
         root.style.setProperty('--table-font-size', '11px');
       } else {
         root.style.setProperty('--content-padding', _currentSettings['content-padding'] + 'px');
-        root.style.setProperty('--card-gap', _currentSettings['card-gap'] + 'px');
         root.style.setProperty('--table-font-size', _currentSettings['table-fontSize'] + 'px');
       }
       _toggleCompactLayoutLock(value);
@@ -1089,25 +1083,24 @@ async function loadCustomFontsList() {
 
 // ── 紧凑模式锁定布局控件 ────────────────────────────────────
 function _toggleCompactLayoutLock(locked) {
-  const ids = ['s-content-padding', 's-card-gap'];
+  const id = 's-content-padding';
   const lockInfoId = 'compact-layout-lock-info';
   let infoEl = document.getElementById(lockInfoId);
 
-  ids.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
+  const el = document.getElementById(id);
+  if (el) {
     el.disabled = locked;
     el.style.opacity = locked ? '0.5' : '';
     el.style.pointerEvents = locked ? 'none' : '';
-  });
+  }
 
   if (locked) {
-    const row = document.getElementById('s-content-padding')?.closest('.settings-row');
+    const row = el?.closest('.settings-row');
     if (row && !infoEl) {
       const hint = document.createElement('div');
       hint.id = lockInfoId;
       hint.style.cssText = 'font-size:var(--font-size-11);color:var(--warning);margin-top:4px;';
-      hint.textContent = '紧凑模式已启用，内容边距和卡片间距由紧凑模式控制';
+      hint.textContent = '紧凑模式已启用，内容边距由紧凑模式控制';
       row.parentElement.insertBefore(hint, row);
     }
   } else if (infoEl) {
