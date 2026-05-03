@@ -19,7 +19,8 @@ async function loadPriceTable() {
     }).join('');
     return `<tr><td><input type="checkbox" class="model-check" value="${m.id}" onchange="updateBatchDelModelBtn()"></td><td style="font-weight:600;color:var(--primary-dark);">${escHtml(m.model_no)}</td>${cells}<td><button class="btn btn-sm btn-danger" onclick="delModel(${m.id})">删除</button></td></tr>`;
   }).join('');
-  document.getElementById('priceTable').innerHTML = `<div class="table-wrap"><table>${thead}<tbody>${tbody}</tbody></table></div>`;
+  const zebraCls = (typeof _currentSettings !== 'undefined' && _currentSettings['table-zebra']) ? ' table-zebra' : '';
+  document.getElementById('priceTable').innerHTML = `<div class="table-wrap"><table class="${zebraCls.trim()}">${thead}<tbody>${tbody}</tbody></table></div>`;
   // 同步全选状态
   const headerCb = document.getElementById('modelSelectAll');
   const tableCb = document.getElementById('modelTableSelectAll');

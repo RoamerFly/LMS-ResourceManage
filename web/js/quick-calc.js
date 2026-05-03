@@ -107,7 +107,8 @@ function renderQcDeptTables() {
     if (sortedRowKeys.length === 0) {
       html += `<div style="padding:16px;color:var(--text-muted);font-size:var(--font-size-12);text-align:center;">暂无行数据，请点击下方按钮添加</div>`;
     } else {
-      html += `<div class="spreadsheet-wrap qc-dept-table-wrap"><table class="spreadsheet${isWage ? ' wage-view' : ''}">`;
+      const zebraCls = (typeof _currentSettings !== 'undefined' && _currentSettings['table-zebra']) ? ' table-zebra' : '';
+      html += `<div class="spreadsheet-wrap qc-dept-table-wrap"><table class="spreadsheet${isWage ? ' wage-view' : ''}${zebraCls}">`;
 
       // 表头 - 只有单价列和成员列，没有型号列，操作列在最左边
       html += '<thead><tr>';

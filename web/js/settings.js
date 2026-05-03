@@ -294,7 +294,7 @@ function applySetting(key, value, skipSave = false) {
       root.style.setProperty('--table-row-height', value + 'px');
       break;
     case 'table-zebra':
-      document.querySelectorAll('.spreadsheet').forEach(t => {
+      document.querySelectorAll('.spreadsheet, #priceTable table').forEach(t => {
         t.classList.toggle('table-zebra', value);
       });
       break;
