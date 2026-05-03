@@ -2,15 +2,24 @@
   <img src="立杰鞋业工资管理系统.png" alt="立杰工资管理系统" width="160">
 </p>
 
-# 立杰工资管理系统
+<h1 align="center">立杰工资管理系统</h1>
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+">
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
+  <img src="https://img.shields.io/badge/platform-Windows-lightgrey.svg" alt="Platform">
+  <img src="https://img.shields.io/badge/database-SQLite3-green.svg" alt="SQLite3">
+  <img src="https://img.shields.io/badge/打包-PyInstaller-orange.svg" alt="PyInstaller">
+</p>
 
-立杰工资管理系统是一款面向个人和小型鞋业加工场景的本地工资管理工具，重点解决成员资料、订单型号、做货对数、快捷工资计算、增扣记录、银行卡资料和工资打印等日常事务。
+<p align="center">
+  立杰工资管理系统是一款面向个人和小型鞋业加工场景的本地工资管理工具，<br>
+  重点解决成员资料、订单型号、做货对数、快捷工资计算、增扣记录、银行卡资料和工资打印等日常事务。
+</p>
 
-项目基于 `Python + FastAPI + pywebview + SQLite`，默认在本机离线运行，数据保存在程序目录下的 `data.db`。除“银行卡开户行查询”会调用支付宝公开卡 BIN 查询接口外，核心工资数据不依赖外部服务。
+<p align="center">
+  <a href="#界面预览">界面预览</a> · <a href="#快速开始">快速开始</a> · <a href="#功能总览">功能总览</a> · <a href="#打包发布">打包发布</a> · <a href="#故障排查">故障排查</a>
+</p>
 
 ---
 
