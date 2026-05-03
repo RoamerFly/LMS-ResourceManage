@@ -44,6 +44,8 @@
 
 ![做货编辑](docs/images/screenshot-work-edit.png)
 
+![工资视角](docs/images/screenshot-work-edit-salary.png)
+
 ### 快捷计算
 
 快捷计算按大部门分组录入对数和单价，可实时计算行合计、部门合计和全厂合计。快捷计算可作为总工资表和成员详情的工资数据源。
