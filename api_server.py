@@ -438,6 +438,11 @@ async def api_load_quick_calc(year: int, month: int):
     return crud.load_quick_calc(year, month)
 
 
+@app.post("/api/quick-calc-save/clear")
+async def api_clear_quick_calc_saves():
+    return crud.clear_quick_calc_saves()
+
+
 # ── 初始化 ────────────────────────────────────────────
 
 @app.get("/api/init")
@@ -466,6 +471,12 @@ async def api_get_all_app_settings():
 async def api_save_all_app_settings(body: dict):
     """批量保存所有 UI 设置"""
     return crud.save_all_app_settings(body)
+
+
+@app.post("/api/settings/clear-orphaned")
+async def api_clear_orphaned_ui_settings(body: dict):
+    """删除 app_settings 中不在 valid_keys 列表里的 ui_ 前缀键"""
+    return crud.clear_orphaned_ui_settings(body.get("valid_keys", []))
 
 
 # ── 数据库导入导出 ─────────────────────────────────────────

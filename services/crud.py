@@ -65,6 +65,20 @@ def save_all_app_settings(settings: dict):
     conn.close()
     return {"ok": True}
 
+
+def clear_orphaned_ui_settings(valid_keys: list[str]):
+    """删除 app_settings 中不在 valid_keys 列表里的 ui_ 前缀键"""
+    conn = get_connection()
+    rows = conn.execute("SELECT key FROM app_settings WHERE key LIKE 'ui_%'").fetchall()
+    orphaned = [r["key"] for r in rows if r["key"] not in valid_keys]
+    if orphaned:
+        placeholders = ",".join("?" for _ in orphaned)
+        conn.execute(f"DELETE FROM app_settings WHERE key IN ({placeholders})", orphaned)
+        conn.commit()
+    conn.close()
+    return {"ok": True, "deleted": len(orphaned), "keys": orphaned}
+
+
 # ── 部门管理 ────────────────────────────────────────────
 
 
@@ -1000,9 +1014,20 @@ def delete_data_by_filter(emp_id: int = None, year: int = None, month: int = Non
     conn = get_connection()
     has_emp = emp_id is not None
     has_ym = year is not None and month is not None
+    counts = {"work_records": 0, "salary_adjustments": 0, "quick_calc_saves": 0}
+
+    def _count(sql, params=()):
+        return conn.execute(sql, params).fetchone()[0]
 
     if has_emp and has_ym:
-        # 指定成员 + 指定月份
+        counts["work_records"] = _count(
+            "SELECT COUNT(*) FROM work_records WHERE emp_id=? AND year=? AND month=?",
+            (emp_id, year, month)
+        )
+        counts["salary_adjustments"] = _count(
+            "SELECT COUNT(*) FROM salary_adjustments WHERE emp_id=? AND year=? AND month=?",
+            (emp_id, year, month)
+        )
         conn.execute(
             "DELETE FROM work_records WHERE emp_id=? AND year=? AND month=?",
             (emp_id, year, month)
@@ -1011,13 +1036,25 @@ def delete_data_by_filter(emp_id: int = None, year: int = None, month: int = Non
             "DELETE FROM salary_adjustments WHERE emp_id=? AND year=? AND month=?",
             (emp_id, year, month)
         )
-        # 快捷计算是按年月整体存储，无法按成员删除，跳过
     elif has_emp:
-        # 仅指定成员
+        counts["work_records"] = _count(
+            "SELECT COUNT(*) FROM work_records WHERE emp_id=?", (emp_id,)
+        )
+        counts["salary_adjustments"] = _count(
+            "SELECT COUNT(*) FROM salary_adjustments WHERE emp_id=?", (emp_id,)
+        )
         conn.execute("DELETE FROM work_records WHERE emp_id=?", (emp_id,))
         conn.execute("DELETE FROM salary_adjustments WHERE emp_id=?", (emp_id,))
     elif has_ym:
-        # 仅指定年月
+        counts["work_records"] = _count(
+            "SELECT COUNT(*) FROM work_records WHERE year=? AND month=?", (year, month)
+        )
+        counts["salary_adjustments"] = _count(
+            "SELECT COUNT(*) FROM salary_adjustments WHERE year=? AND month=?", (year, month)
+        )
+        counts["quick_calc_saves"] = _count(
+            "SELECT COUNT(*) FROM quick_calc_saves WHERE year=? AND month=?", (year, month)
+        )
         conn.execute(
             "DELETE FROM work_records WHERE year=? AND month=?", (year, month)
         )
@@ -1028,14 +1065,17 @@ def delete_data_by_filter(emp_id: int = None, year: int = None, month: int = Non
             "DELETE FROM quick_calc_saves WHERE year=? AND month=?", (year, month)
         )
     else:
-        # 全部清空
+        counts["work_records"] = _count("SELECT COUNT(*) FROM work_records")
+        counts["salary_adjustments"] = _count("SELECT COUNT(*) FROM salary_adjustments")
+        counts["quick_calc_saves"] = _count("SELECT COUNT(*) FROM quick_calc_saves")
         conn.execute("DELETE FROM work_records")
         conn.execute("DELETE FROM salary_adjustments")
         conn.execute("DELETE FROM quick_calc_saves")
 
     conn.commit()
     conn.close()
-    return {"ok": True}
+    counts["total"] = sum(counts.values())
+    return {"ok": True, "counts": counts}
 
 
 # ── 快捷计算自动保存 ──────────────────────────────────────
@@ -1075,6 +1115,16 @@ def load_quick_calc(year: int, month: int):
         "dept_rows": json.loads(row[0]),
         "qty_data": json.loads(row[1]),
     }
+
+
+def clear_quick_calc_saves():
+    """清空所有快捷计算保存数据"""
+    conn = get_connection()
+    count = conn.execute("SELECT COUNT(*) FROM quick_calc_saves").fetchone()[0]
+    conn.execute("DELETE FROM quick_calc_saves")
+    conn.commit()
+    conn.close()
+    return {"ok": True, "cleared": count}
 
 
 # ── 总工资表 ────────────────────────────────────────────

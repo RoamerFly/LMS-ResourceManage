@@ -631,6 +631,9 @@ function resetSettings() {
   applyAllSettings();
   initSettingsPage();
   saveSettings();
+  const validKeys = Object.keys(DEFAULT_SETTINGS).map(k => 'ui_' + k);
+  validKeys.push('ui_globalYear', 'ui_globalMonth');
+  post('/api/settings/clear-orphaned', { valid_keys: validKeys }).catch(() => {});
   showToast('已恢复默认设置', 'info');
 }
 
@@ -674,10 +677,15 @@ function importSettings(input) {
 
 function clearQuickCalcSaves() {
   if (confirm('确定要清除快捷计算的自动保存数据吗？')) {
-    Object.keys(localStorage).forEach(k => {
-      if (k.startsWith('li_jie_hr_qc_')) localStorage.removeItem(k);
+    post('/api/quick-calc-save/clear').then(res => {
+      if (res.ok) {
+        showToast(`已清除 ${res.cleared || 0} 条快捷计算保存数据`, 'success');
+      } else {
+        showToast('清除失败：' + (res.error || '未知错误'), 'error');
+      }
+    }).catch(err => {
+      showToast('请求失败：' + err.message, 'error');
     });
-    showToast('快捷计算保存数据已清除', 'success');
   }
 }
 
@@ -1214,9 +1222,9 @@ function _onCleanModeChange() {
 
   // 提示文案
   const hintMap = {
-    emp:   { bg: '#fef3c7', color: '#92400e', text: '将删除该成员所有月份的做货记录和工资增扣，不可恢复。' },
+    emp:   { bg: '#fef3c7', color: '#92400e', text: '将删除该成员所有月份的做货记录和工资增扣，不可恢复。（快捷计算按年月整体存储，不支持按成员清理）' },
     ym:    { bg: '#fef3c7', color: '#92400e', text: '将删除指定年月内所有人的做货记录、工资增扣及快捷计算保存，不可恢复。' },
-    empym: { bg: '#fef3c7', color: '#92400e', text: '将删除该成员在指定年月的做货记录和工资增扣，不可恢复。' },
+    empym: { bg: '#fef3c7', color: '#92400e', text: '将删除该成员在指定年月的做货记录和工资增扣，不可恢复。（快捷计算按年月整体存储，不支持按成员清理）' },
     all:   { bg: '#fee2e2', color: '#991b1b', text: '⚠ 将删除所有成员所有月份的做货记录、工资增扣及快捷计算保存！此操作不可恢复，请谨慎操作！' }
   };
   if (mode && hintMap[mode]) {
@@ -1273,7 +1281,13 @@ async function doCleanData() {
     const data = await res.json();
     if (data.ok) {
       closeModal();
-      showToast('数据清理完成', 'success');
+      const c = data.counts || {};
+      const parts = [];
+      if (c.work_records) parts.push(`${c.work_records} 条做货记录`);
+      if (c.salary_adjustments) parts.push(`${c.salary_adjustments} 条增扣`);
+      if (c.quick_calc_saves) parts.push(`${c.quick_calc_saves} 条快捷计算`);
+      const msg = parts.length ? `已清理：${parts.join('、')}` : '无需清理，数据为空';
+      showToast(msg, 'success');
     } else {
       showToast('清理失败：' + (data.error || '未知错误'), 'error');
     }
