@@ -274,13 +274,16 @@ function applySetting(key, value, skipSave = false) {
       break;
     case 'radius':
     case 'shadow':
+      root.style.setProperty('--' + key, value);
+      break;
     case 'sidebar-width':
+      root.style.setProperty('--sidebar-width', value + 'px');
+      break;
     case 'content-padding':
+      root.style.setProperty('--content-padding', value + 'px');
+      break;
     case 'card-gap':
-      root.style.setProperty('--' + key.replace(/([A-Z])/g, '-$1').toLowerCase(), value);
-      if (key === 'sidebar-width') root.style.setProperty('--sidebar-width', value + 'px');
-      if (key === 'content-padding') root.style.setProperty('--content-padding', value + 'px');
-      if (key === 'card-gap') root.style.setProperty('--card-gap', value + 'px');
+      root.style.setProperty('--card-gap', value + 'px');
       break;
     case 'fontFamily':
       // 直接设置字体族，font-family 值本身可以包含引号，无需再外套
@@ -318,6 +321,7 @@ function applySetting(key, value, skipSave = false) {
         root.style.setProperty('--card-gap', _currentSettings['card-gap'] + 'px');
         root.style.setProperty('--table-font-size', _currentSettings['table-fontSize'] + 'px');
       }
+      _toggleCompactLayoutLock(value);
       break;
     case 'table-displayMode':
       // 显示/隐藏分组数量控件
@@ -390,37 +394,18 @@ function updateSliderVal(key, value) {
 // 双击滑块数值输入自定义值
 function editSliderVal(key, el) {
   const currentVal = parseInt(el.textContent) || 13;
+  const slider = document.getElementById('s-' + key);
+
+  let min = 8, max = 32;
+  if (key === 'table-groupSize') { min = 5; max = 50; }
+  else if (slider) { min = parseInt(slider.min) || min; max = parseInt(slider.max) || max; }
+
   const input = document.createElement('input');
   input.type = 'number';
   input.value = currentVal;
+  input.min = min;
+  input.max = max;
   input.style.cssText = 'width:60px;padding:2px 4px;border:1px solid var(--primary);border-radius:4px;font-size:var(--font-size-12);text-align:center;';
-  
-  // 根据设置项设置不同的最小最大值
-  if (key === 'table-groupSize') {
-    input.min = 5;
-    input.max = 50;
-  } else if (key === 'window-width') {
-    input.min = 800;
-    input.max = 3840;
-  } else if (key === 'window-height') {
-    input.min = 600;
-    input.max = 2160;
-  } else if (key === 'sidebar-width') {
-    input.min = 150;
-    input.max = 400;
-  } else if (key === 'fontSize-base') {
-    input.min = 11;
-    input.max = 26;  // 2倍差值：原差值7，2倍差值约14，范围 11-25/26
-  } else if (key === 'content-padding' || key === 'card-gap') {
-    input.min = 0;
-    input.max = 50;
-  } else if (key === 'table-rowHeight') {
-    input.min = 24;
-    input.max = 80;
-  } else {
-    input.min = 8;
-    input.max = 32;
-  }
   
   const saveValue = () => {
     let val = parseInt(input.value);
@@ -835,6 +820,8 @@ async function initSettingsPage() {
     const legacyRow = document.getElementById('s-' + key)?.closest('.settings-row');
     if (legacyRow) legacyRow.remove();
   });
+
+  if (_currentSettings['table-compact']) _toggleCompactLayoutLock(true);
 }
 
 // 最大化窗口开关变化（与全屏模式互斥）
@@ -1097,6 +1084,34 @@ async function loadCustomFontsList() {
     }
   } catch (e) {
     console.log('加载自定义字体列表失败:', e);
+  }
+}
+
+// ── 紧凑模式锁定布局控件 ────────────────────────────────────
+function _toggleCompactLayoutLock(locked) {
+  const ids = ['s-content-padding', 's-card-gap'];
+  const lockInfoId = 'compact-layout-lock-info';
+  let infoEl = document.getElementById(lockInfoId);
+
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = locked;
+    el.style.opacity = locked ? '0.5' : '';
+    el.style.pointerEvents = locked ? 'none' : '';
+  });
+
+  if (locked) {
+    const row = document.getElementById('s-content-padding')?.closest('.settings-row');
+    if (row && !infoEl) {
+      const hint = document.createElement('div');
+      hint.id = lockInfoId;
+      hint.style.cssText = 'font-size:var(--font-size-11);color:var(--warning);margin-top:4px;';
+      hint.textContent = '紧凑模式已启用，内容边距和卡片间距由紧凑模式控制';
+      row.parentElement.insertBefore(hint, row);
+    }
+  } else if (infoEl) {
+    infoEl.remove();
   }
 }
 

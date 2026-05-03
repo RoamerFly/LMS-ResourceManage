@@ -70,6 +70,7 @@
   --table-row-height: 40px;
   /* 间距 */
   --content-padding: 18px;
+  --card-gap: 14px;
   /* 圆角 */
   --radius-sm: 4px;
   --radius-md: 8px;
