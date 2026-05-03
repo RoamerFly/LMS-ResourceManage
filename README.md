@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="立杰鞋业工资管理系统.png" alt="立杰工资管理系统" width="160">
+</p>
+
 # 立杰工资管理系统
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
