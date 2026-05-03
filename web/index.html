@@ -469,30 +469,12 @@
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">紧凑模式</div><div class="settings-row-desc">减少间距，更显示更多内容</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">紧凑模式</div><div class="settings-row-desc">减少间距，显示更多内容</div></div>
               <div class="settings-row-control">
                 <label class="toggle-switch">
                   <input type="checkbox" id="s-table-compact" onchange="applySetting('table-compact', this.checked)">
                   <span class="toggle-slider"></span>
                 </label>
-              </div>
-            </div>
-            <div class="settings-row" style="display:none">
-              <div class="settings-row-info"><div class="settings-row-label">表格显示方式</div><div class="settings-row-desc">分表格：超人数自动分组纵向排列；单表格：全部显示横向滚动</div></div>
-              <div class="settings-row-control">
-                <select class="settings-select" id="s-table-displayMode" onchange="applySetting('table-displayMode', this.value)">
-                  <option value="grouped">分表格</option>
-                  <option value="single" selected>单表格（横向滚动）</option>
-                </select>
-              </div>
-            </div>
-            <div class="settings-row" id="table-groupSize-row" style="display:none">
-              <div class="settings-row-info"><div class="settings-row-label">每组人数（分表格模式）</div><div class="settings-row-desc">每组显示多少名员工（超出会自动分组）</div></div>
-              <div class="settings-row-control">
-                <div class="slider-control">
-                  <input type="range" class="slider-input" id="s-table-groupSize" min="2" max="24" value="8" oninput="updateSliderVal('table-groupSize', this.value); applySetting('table-groupSize', this.value)">
-                  <span class="slider-value" id="s-table-groupSize-val">8人</span>
-                </div>
               </div>
             </div>
           </div>

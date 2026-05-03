@@ -11,8 +11,6 @@ const DEFAULT_SETTINGS = {
   'table-rowHeight': '40',
   'table-zebra': false,
   'table-compact': false,
-  'table-groupSize': '8',
-  'table-displayMode': 'single',  // 固定为单表格模式
   primary: '#3b82f6',
   'sidebar-bg': '#1e293b',
   bg: '#f1f5f9',
@@ -296,16 +294,9 @@ function applySetting(key, value, skipSave = false) {
       root.style.setProperty('--table-row-height', value + 'px');
       break;
     case 'table-zebra':
-      // 移除旧斑马纹规则
-      if (window._zebraRuleIdx !== undefined) {
-        try { document.styleSheets[0].deleteRule(window._zebraRuleIdx); } catch(e) {}
-        window._zebraRuleIdx = undefined;
-      }
-      if (value) {
-        // 在样式表开头插入斑马纹规则
-        document.styleSheets[0].insertRule('tbody tr:nth-child(odd) td { background: var(--bg); }', 0);
-        window._zebraRuleIdx = 0;
-      }
+      document.querySelectorAll('.spreadsheet').forEach(t => {
+        t.classList.toggle('table-zebra', value);
+      });
       break;
     case 'table-compact':
       if (value) {
@@ -316,14 +307,6 @@ function applySetting(key, value, skipSave = false) {
         root.style.setProperty('--table-font-size', _currentSettings['table-fontSize'] + 'px');
       }
       _toggleCompactLayoutLock(value);
-      break;
-    case 'table-displayMode':
-      // 显示/隐藏分组数量控件
-      const groupRow = document.getElementById('table-groupSize-row');
-      if (groupRow) groupRow.style.display = value === 'single' ? 'none' : 'flex';
-      break;
-    case 'table-groupSize':
-      // 仅记录设置值，不要在这里渲染，渲染只在用户切换页面时发生
       break;
     case 'primary':
     case 'sidebar-bg':
@@ -379,10 +362,7 @@ function updateControlDisplay(key, value) {
 
 function updateSliderVal(key, value) {
   const valEl = document.getElementById('s-' + key + '-val');
-  if (valEl) {
-    const suffix = key === 'table-groupSize' ? '人' : 'px';
-    valEl.textContent = value + suffix;
-  }
+  if (valEl) valEl.textContent = value + 'px';
 }
 
 // 双击滑块数值输入自定义值
@@ -391,8 +371,7 @@ function editSliderVal(key, el) {
   const slider = document.getElementById('s-' + key);
 
   let min = 8, max = 32;
-  if (key === 'table-groupSize') { min = 5; max = 50; }
-  else if (slider) { min = parseInt(slider.min) || min; max = parseInt(slider.max) || max; }
+  if (slider) { min = parseInt(slider.min) || min; max = parseInt(slider.max) || max; }
 
   const input = document.createElement('input');
   input.type = 'number';
@@ -404,27 +383,19 @@ function editSliderVal(key, el) {
   const saveValue = () => {
     let val = parseInt(input.value);
     if (isNaN(val)) val = currentVal;
-    // 限制范围
     const min = parseInt(input.min);
     const max = parseInt(input.max);
     val = Math.max(min, Math.min(max, val));
     
-    // 更新显示
-    const suffix = key === 'table-groupSize' ? '人' : 'px';
-    el.textContent = val + suffix;
+    el.textContent = val + 'px';
     
-    // 同步更新滑块
     const slider = document.getElementById('s-' + key);
-    if (slider) {
-      slider.value = val;
-    }
+    if (slider) slider.value = val;
     
-    // 应用设置（skipSave=true 避免重复调用 saveSettingsDebounced）
     applySetting(key, val, true);
     _currentSettings[key] = val;
     saveSettings();
     
-    // 移除输入框，恢复为纯文本显示
     input.remove();
   };
   
@@ -433,8 +404,7 @@ function editSliderVal(key, el) {
     if (e.key === 'Enter') {
       input.blur();
     } else if (e.key === 'Escape') {
-      const suffix = key === 'table-groupSize' ? '人' : 'px';
-      el.textContent = currentVal + suffix;
+      el.textContent = currentVal + 'px';
       el.style.display = '';
     }
   };

@@ -304,7 +304,8 @@ function renderSpreadsheet() {
       </tr>`;
     }
     tbodyHtml += "</tbody>";
-    return `<table class="spreadsheet${isWage ? " wage-view" : ""}${isSingleMode ? " single-table-mode" : ""}">${headerHtml}${tbodyHtml}</table>`;
+    const zebraCls = (typeof _currentSettings !== 'undefined' && _currentSettings['table-zebra']) ? ' table-zebra' : '';
+    return `<table class="spreadsheet${isWage ? " wage-view" : ""}${isSingleMode ? " single-table-mode" : ""}${zebraCls}">${headerHtml}${tbodyHtml}</table>`;
   }
 
   let tablesHtml = "";

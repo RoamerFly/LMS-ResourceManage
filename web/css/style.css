@@ -1452,6 +1452,9 @@ tr:hover td { background: var(--surface-soft); }
 .spreadsheet tbody tr:hover td.col-fixed { background: #f1f5f9 !important; }
 .spreadsheet tbody tr:hover td.col-fixed-2 { background: #f1f5f9 !important; }
 
+.table-zebra tbody tr:nth-child(odd) td { background: var(--bg); }
+.table-zebra tbody tr:nth-child(even) td { background: #f8fafc; }
+
 /* 分组表格标签 */
 .table-group-label {
   display: flex; align-items: center; gap: 6px;
