@@ -10,9 +10,9 @@
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/database-SQLite3-green.svg" alt="SQLite3">
   <img src="https://img.shields.io/badge/打包-PyInstaller-orange.svg" alt="PyInstaller">
-
-  <img alt="Downloads" src="https://img.shields.io/github/downloads/RoamerFly/LMS-ResourceManage/total?style=for-the-badge&logo=github&color=34d399" />
 </p>
+
+<img alt="Downloads" src="https://img.shields.io/github/downloads/RoamerFly/LMS-ResourceManage/total?style=for-the-badge&logo=github&color=34d399" />
 
 <p align="center">
   立杰工资管理系统是一款面向个人和小型鞋业加工场景的本地工资管理工具，<br>
