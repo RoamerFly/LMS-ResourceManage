@@ -4,14 +4,14 @@
 <input id="qcYear" hidden><input id="qcMonth" hidden>
 <div id="spreadsheetWrap">
   <table class="spreadsheet"><tbody>
-    <tr data-row-key="r1"><td><input data-row="r1" data-emp="1" value="1" oninput="workInput(this)"></td><td><input data-row="r1" data-emp="2" value="2" oninput="workInput(this)"></td></tr>
-    <tr data-row-key="r2"><td><input data-row="r2" data-emp="1" value="3" oninput="workInput(this)"></td><td><input data-row="r2" data-emp="2" value="4" oninput="workInput(this)"></td></tr>
+    <tr data-row-key="r1"><td><input type="number" data-row="r1" data-emp="1" value="1" oninput="workInput(this)"></td><td><input type="number" data-row="r1" data-emp="2" value="2" oninput="workInput(this)"></td></tr>
+    <tr data-row-key="r2"><td><input type="number" data-row="r2" data-emp="1" value="3" oninput="workInput(this)"></td><td><input type="number" data-row="r2" data-emp="2" value="4" oninput="workInput(this)"></td></tr>
   </tbody></table>
 </div>
 <div id="qcDeptTablesWrap">
   <table class="spreadsheet"><tbody>
-    <tr data-row-key="1_0"><td><input class="qc-price-input" data-row-key="1_0" data-sub-id="10" value="1.25" oninput="priceInput(this)"></td><td><input class="qc-qty-input" data-row-key="1_0" data-key="1_0,20" value="5" oninput="qtyInput(this)"></td></tr>
-    <tr data-row-key="1_1"><td><input class="qc-price-input" data-row-key="1_1" data-sub-id="10" value="2.5" oninput="priceInput(this)"></td><td><input class="qc-qty-input" data-row-key="1_1" data-key="1_1,20" value="6" oninput="qtyInput(this)"></td></tr>
+    <tr data-row-key="1_0"><td><input type="number" class="qc-price-input" data-row-key="1_0" data-sub-id="10" value="1.25" oninput="priceInput(this)"></td><td><input type="number" class="qc-qty-input" data-row-key="1_0" data-key="1_0,20" value="5" oninput="qtyInput(this)"></td></tr>
+    <tr data-row-key="1_1"><td><input type="number" class="qc-price-input" data-row-key="1_1" data-sub-id="10" value="2.5" oninput="priceInput(this)"></td><td><input type="number" class="qc-qty-input" data-row-key="1_1" data-key="1_1,20" value="6" oninput="qtyInput(this)"></td></tr>
   </tbody></table>
 </div>
 <pre id="results">未运行</pre>
@@ -36,7 +36,7 @@
     const check = (condition, label) => { if (!condition) errors.push(label); };
     const work = [...document.querySelectorAll('#spreadsheetWrap input')];
     const quick = [...document.querySelectorAll('#qcDeptTablesWrap input')];
-    const key = (target, name, shiftKey = false) => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, shiftKey, bubbles: true, cancelable: true }));
+    const key = (target, name, shiftKey = false, ctrlKey = false) => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, shiftKey, ctrlKey, bubbles: true, cancelable: true }));
     const clipboard = (target, type, value = '') => {
       const data = { value, types: ['text/plain'], setData(_, text) { this.value = text; }, getData() { return this.value; } };
       const event = new Event(type, { bubbles: true, cancelable: true });
@@ -45,46 +45,70 @@
       return data.value;
     };
 
-    work[0].focus();
-    key(work[0], 'ArrowRight');
-    check(document.activeElement === work[1], '方向键切换焦点');
-    key(work[1], 'ArrowDown', true);
+    work[0].dispatchEvent(new MouseEvent('mousedown', { button: 0, buttons: 1, bubbles: true, cancelable: true }));
+    check(document.activeElement === work[0].closest('td'), '单击选中整个单元格');
+    key(document.activeElement, 'ArrowRight');
+    check(document.activeElement === work[1].closest('td'), '方向键切换单元格');
+    key(document.activeElement, 'ArrowDown', true);
     check(work[1].closest('td').classList.contains('sheet-selected') && work[3].closest('td').classList.contains('sheet-selected'), 'Shift+方向键扩选');
-    check(clipboard(work[1], 'copy') === '2\r\n4', '区域复制 TSV');
+    check(clipboard(document.activeElement, 'copy') === '2\r\n4', '区域复制 TSV');
+    let keyboardCopy = '';
+    const originalExecCommand = document.execCommand;
+    document.execCommand = () => { keyboardCopy = document.activeElement.value; return true; };
+    key(document.activeElement, 'c', false, true);
+    document.execCommand = originalExecCommand;
+    check(keyboardCopy === '2\n4', '数字单元格 Ctrl+C 直接复制');
 
     work[0].dispatchEvent(new MouseEvent('mousedown', { button: 0, buttons: 1, bubbles: true, cancelable: true }));
     work[3].dispatchEvent(new MouseEvent('mouseover', { buttons: 1, bubbles: true }));
     document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-    check(clipboard(work[0], 'copy') === '1\t2\r\n3\t4', '鼠标拖选矩形');
+    check(clipboard(document.activeElement, 'copy') === '1\t2\r\n3\t4', '鼠标拖选矩形');
 
-    work[0].focus();
-    clipboard(work[0], 'paste', '7\t8\n9\t10');
+    clipboard(document.activeElement, 'paste', '7\t8\n9\t10');
     check(_weRowMap.r1.emps[1] === 7 && _weRowMap.r1.emps[2] === 8 && _weRowMap.r2.emps[1] === 9 && _weRowMap.r2.emps[2] === 10, '多行多列粘贴');
     check(history.length === 1 && history[0] === 'work-edit', '区域粘贴仅一条撤销记录');
 
-    quick[0].focus();
-    clipboard(quick[0], 'paste', '3.75\t12');
+    quick[0].dispatchEvent(new MouseEvent('mousedown', { button: 0, buttons: 1, bubbles: true, cancelable: true }));
+    clipboard(document.activeElement, 'paste', '3.75\t12');
     check(_qcDeptRows['1_0'][10] === 3.75 && _qcState.qtyData['1_0,20'] === 12, '快捷计算单价与对数粘贴');
     check(history.length === 2 && history[1] === 'quick-calc', '跨表格历史类型');
     _editSession = { type: 'quick-calc-price', rowKey: '1_0', subId: 10, originalValue: 3.75 };
     onQcCellBlur(quick[0], 'price');
     check(history.length === 2, '小数单价失焦不产生虚假修改');
 
-    quick[0].focus();
-    clipboard(quick[0], 'paste', '4.5\t1.2');
+    quick[0].dispatchEvent(new MouseEvent('mousedown', { button: 0, buttons: 1, bubbles: true, cancelable: true }));
+    clipboard(document.activeElement, 'paste', '4.5\t1.2');
     check(_qcDeptRows['1_0'][10] === 3.75 && _qcState.qtyData['1_0,20'] === 12 && history.length === 2, '非法对数不会部分写入');
-    quick[1].focus();
-    clipboard(quick[1], 'paste', '13\t14');
+    quick[1].dispatchEvent(new MouseEvent('mousedown', { button: 0, buttons: 1, bubbles: true, cancelable: true }));
+    clipboard(document.activeElement, 'paste', '13\t14');
     check(_qcState.qtyData['1_0,20'] === 13 && notices.some(message => message.includes('超出部分')), '越界内容裁剪并提示');
 
     work[0].dispatchEvent(new MouseEvent('mousedown', { button: 0, buttons: 1, bubbles: true, cancelable: true }));
     work[3].dispatchEvent(new MouseEvent('mouseover', { buttons: 1, bubbles: true }));
     document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-    clipboard(work[0], 'paste', '11');
+    clipboard(document.activeElement, 'paste', '11');
     check(Object.values(_weRowMap).every(row => Object.values(row.emps).every(value => value === 11)), '单值填满选区');
-    work[0].focus();
-    clipboard(work[0], 'paste', '');
+    clipboard(document.activeElement, 'paste', '');
     check(Object.values(_weRowMap).every(row => Object.values(row.emps).every(value => value === 0)), '空白单元格粘贴可清空选区');
+    work[0].dispatchEvent(new MouseEvent('mousedown', { button: 0, buttons: 1, bubbles: true, cancelable: true }));
+    key(document.activeElement, '6');
+    check(document.activeElement === work[0] && _weRowMap.r1.emps[1] === 6, '键入数字直接覆盖并编辑');
+    key(document.activeElement, 'Escape');
+    check(document.activeElement === work[0].closest('td'), 'Escape 返回单元格选择');
+    work[0].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    check(document.activeElement === work[0], '双击进入编辑');
+    key(document.activeElement, 'ArrowRight');
+    check(document.activeElement === work[1].closest('td'), '编辑时方向键移动单元格');
+    key(document.activeElement, 'a', false, true);
+    check(work.every(input => input.closest('td').classList.contains('sheet-selected')), 'Ctrl+A 选中当前表格');
+    key(document.activeElement, 'Delete');
+    check(Object.values(_weRowMap).every(row => Object.values(row.emps).every(value => value === 0)), 'Delete 清空选区');
+    key(document.activeElement, 'Tab');
+    check(document.activeElement === work[0].closest('td'), 'Tab 循环移动单元格');
+    key(document.activeElement, 'Enter');
+    check(document.activeElement === work[2].closest('td'), 'Enter 纵向移动单元格');
+    key(document.activeElement, 'F2');
+    check(document.activeElement === work[2], 'F2 进入编辑');
     document.getElementById('results').textContent = errors.length ? `FAIL: ${errors.join('；')}` : 'PASS: 方向键、扩选、拖选、复制、多表粘贴、撤销记录';
   });
 </script>

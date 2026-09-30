@@ -3,7 +3,7 @@
   const selector = '#spreadsheetWrap input[data-emp], #qcDeptTablesWrap input.qc-price-input, #qcDeptTablesWrap input.qc-qty-input';
   let selection = null;
   let dragging = false;
-  let keepSelectionOnFocus = false;
+  const gridCache = new WeakMap();
 
   function cellFrom(target) {
     if (!(target instanceof Element)) return null;
@@ -13,11 +13,19 @@
   function gridFor(input) {
     const table = input?.closest('table.spreadsheet');
     if (!table) return null;
-    const rows = Array.from(table.querySelectorAll('tbody tr[data-row-key]'))
-      .map(tr => Array.from(tr.querySelectorAll(selector)));
-    const row = rows.findIndex(cells => cells.includes(input));
-    if (row < 0) return null;
-    return { table, rows, row, col: rows[row].indexOf(input) };
+    let cached = gridCache.get(table);
+    if (!cached || !cached.positions.has(input)) {
+      const positions = new Map();
+      const rows = Array.from(table.querySelectorAll('tbody tr[data-row-key]'))
+        .map((tr, row) => Array.from(tr.querySelectorAll(selector)).map((cell, col) => {
+          positions.set(cell, { row, col });
+          return cell;
+        }));
+      cached = { rows, positions };
+      gridCache.set(table, cached);
+    }
+    const position = cached.positions.get(input);
+    return position ? { table, rows: cached.rows, ...position } : null;
   }
 
   function clearHighlight() {
@@ -55,6 +63,7 @@
     const grid = gridFor(input);
     if (!grid) return;
     const sameTable = selection?.table === grid.table;
+    if (extend && sameTable && selection.head.row === grid.row && selection.head.col === grid.col) return;
     clearHighlight();
     selection = {
       table: grid.table,
@@ -70,6 +79,22 @@
     return input ? gridFor(input) : null;
   }
 
+  function focusCell(input, extend = false) {
+    selectCell(input, extend);
+    const td = input.closest('td');
+    td.tabIndex = -1;
+    td.focus({ preventScroll: true });
+    td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
+  function beginEdit(input, firstKey = null) {
+    input.focus();
+    if (firstKey !== null) {
+      input.value = firstKey;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
   function cellValue(input) {
     if (input.dataset.emp) {
       return String(_weRowMap[input.dataset.row]?.emps[input.dataset.emp] ?? input.value);
@@ -81,8 +106,8 @@
   }
 
   document.addEventListener('focusin', event => {
-    const input = cellFrom(event.target);
-    if (input && !keepSelectionOnFocus) selectCell(input);
+    const input = event.target.matches?.(selector) ? event.target : null;
+    if (input) selectCell(input);
   });
 
   document.addEventListener('mousedown', event => {
@@ -94,12 +119,13 @@
     }
     event.preventDefault();
     const extend = event.shiftKey && selection?.table === input.closest('table');
-    selectCell(input, extend);
-    keepSelectionOnFocus = true;
-    input.focus();
-    input.select();
-    keepSelectionOnFocus = false;
+    focusCell(input, extend);
     dragging = true;
+  });
+
+  document.addEventListener('dblclick', event => {
+    const input = cellFrom(event.target);
+    if (input) beginEdit(input);
   });
 
   document.addEventListener('mouseover', event => {
@@ -109,39 +135,9 @@
   });
   document.addEventListener('mouseup', () => { dragging = false; });
 
-  document.addEventListener('keydown', event => {
-    const input = cellFrom(event.target);
-    if (!input || event.altKey || event.ctrlKey || event.metaKey) return;
-    const directions = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
-    const delta = directions[event.key];
-    if (!delta) return;
-    const grid = gridFor(input);
-    if (!grid) return;
-    event.preventDefault();
-    const point = event.shiftKey && selection?.table === grid.table ? selection.head : grid;
-    const row = Math.max(0, Math.min(grid.rows.length - 1, point.row + delta[0]));
-    const col = Math.max(0, Math.min(grid.rows[row].length - 1, point.col + delta[1]));
-    const next = grid.rows[row][col];
-    if (!next) return;
-    if (!selection || selection.table !== grid.table) selectCell(input);
-    if (event.shiftKey) {
-      selectCell(next, true);
-    } else {
-      keepSelectionOnFocus = true;
-      next.focus();
-      next.select();
-      keepSelectionOnFocus = false;
-      selectCell(next);
-    }
-    next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  });
-
-  document.addEventListener('copy', event => {
-    const input = cellFrom(event.target);
-    if (!input) return;
-    if (!selection || selection.table !== input.closest('table')) selectCell(input);
+  function selectionText() {
     const grid = selectedGrid();
-    if (!grid || !event.clipboardData) return;
+    if (!grid) return '';
     const { top, bottom, left, right } = bounds();
     const lines = [];
     for (let row = top; row <= bottom; row++) {
@@ -152,24 +148,112 @@
       }
       lines.push(values.join('\t'));
     }
-    event.clipboardData.setData('text/plain', lines.join('\r\n'));
+    return lines.join('\r\n');
+  }
+
+  function copySelection() {
+    const value = selectionText();
+    const previous = document.activeElement;
+    const proxy = document.createElement('textarea');
+    proxy.value = value;
+    proxy.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+    document.body.appendChild(proxy);
+    proxy.focus();
+    proxy.select();
+    const copied = document.execCommand('copy');
+    proxy.remove();
+    if (previous?.isConnected) previous.focus({ preventScroll: true });
+    if (!copied && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(value).catch(() => showToast('复制失败，请重试', 'error'));
+    } else if (!copied) {
+      showToast('复制失败，请重试', 'error');
+    }
+  }
+
+  function navigate(event, input, grid) {
+    const rows = grid.rows;
+    const current = selection?.table === grid.table ? selection.head : grid;
+    let row = current.row;
+    let col = current.col;
+    const extend = event.shiftKey && event.key.startsWith('Arrow');
+    if (event.key === 'ArrowUp') row--;
+    else if (event.key === 'ArrowDown') row++;
+    else if (event.key === 'ArrowLeft') col--;
+    else if (event.key === 'ArrowRight') col++;
+    else if (event.key === 'Tab') {
+      col += event.shiftKey ? -1 : 1;
+      if (col < 0) { row--; col = rows[0].length - 1; }
+      if (col >= rows[0].length) { row++; col = 0; }
+      row = (row + rows.length) % rows.length;
+    } else if (event.key === 'Enter') {
+      row += event.shiftKey ? -1 : 1;
+      if (row < 0) { row = rows.length - 1; col--; }
+      if (row >= rows.length) { row = 0; col++; }
+      col = (col + rows[0].length) % rows[0].length;
+    }
+    row = Math.max(0, Math.min(rows.length - 1, row));
+    col = Math.max(0, Math.min(rows[row].length - 1, col));
+    const next = rows[row][col];
+    if (next) focusCell(next, extend);
+  }
+
+  document.addEventListener('keydown', event => {
+    const input = cellFrom(event.target);
+    if (!input) return;
+    const grid = gridFor(input);
+    if (!grid) return;
+    if (!selection || selection.table !== grid.table) selectCell(input);
+    const editing = event.target === input;
+
+    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+      if (event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        event.stopPropagation();
+        copySelection();
+      } else if (event.key.toLowerCase() === 'a' && !editing) {
+        event.preventDefault();
+        event.stopPropagation();
+        clearHighlight();
+        selection.anchor = { row: 0, col: 0 };
+        selection.head = { row: grid.rows.length - 1, col: grid.rows[grid.rows.length - 1].length - 1 };
+        paint();
+      }
+      return;
+    }
+    if (event.altKey) return;
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter'].includes(event.key)) {
+      event.preventDefault();
+      event.stopPropagation();
+      navigate(event, input, grid);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      focusCell(input);
+    } else if (!editing && event.key === 'F2') {
+      event.preventDefault();
+      beginEdit(input);
+    } else if (!editing && /^\d$/.test(event.key)) {
+      event.preventDefault();
+      beginEdit(input, event.key);
+    } else if (!editing && (event.key === 'Delete' || event.key === 'Backspace')) {
+      event.preventDefault();
+      applyValues(grid, [['']], true);
+    }
+  }, true);
+
+  document.addEventListener('copy', event => {
+    const input = cellFrom(event.target);
+    if (!input) return;
+    if (!selection || selection.table !== input.closest('table')) selectCell(input);
+    if (!event.clipboardData) return;
+    event.clipboardData.setData('text/plain', selectionText());
     event.preventDefault();
   });
 
-  document.addEventListener('paste', event => {
-    const input = cellFrom(event.target);
-    if (!input || !event.clipboardData) return;
-    event.preventDefault();
-    if (!selection || selection.table !== input.closest('table')) selectCell(input);
-    const grid = selectedGrid();
-    if (!grid) return;
-    if (!Array.from(event.clipboardData.types || []).includes('text/plain')) return;
-    const text = event.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n').replace(/\n$/, '');
-    const values = text.split('\n').map(line => line.split('\t'));
-
+  function applyValues(grid, values, fillSelection = false) {
     const area = bounds();
-    const fill = values.length === 1 && values[0].length === 1 &&
-      (area.bottom > area.top || area.right > area.left);
+    const fill = fillSelection || (values.length === 1 && values[0].length === 1 &&
+      (area.bottom > area.top || area.right > area.left));
     const height = fill ? area.bottom - area.top + 1 : values.length;
     const width = fill ? area.right - area.left + 1 : Math.max(...values.map(row => row.length));
     const changes = [];
@@ -189,21 +273,29 @@
     }
     if (!changes.length) return;
     // 先结束当前编辑会话，再把整块粘贴作为一次撤销操作。
-    input.blur();
+    if (document.activeElement?.matches?.(selector)) document.activeElement.blur();
     pushHistory(grid.table.closest('#spreadsheetWrap') ? 'work-edit' : 'quick-calc');
     for (const { target, value } of changes) {
       target.value = value;
       target.dispatchEvent(new Event('input', { bubbles: true }));
     }
     const first = grid.rows[area.top][area.left];
-    keepSelectionOnFocus = true;
-    first.focus();
-    keepSelectionOnFocus = false;
-    selectCell(first);
+    focusCell(first);
     const last = grid.rows[Math.min(area.top + height - 1, grid.rows.length - 1)]?.[
       Math.min(area.left + width - 1, grid.rows[area.top].length - 1)
     ];
     if (last) selectCell(last, true);
     if (clipped) showToast('已粘贴到表格边界，超出部分未写入', 'info');
+  }
+
+  document.addEventListener('paste', event => {
+    const input = cellFrom(event.target);
+    if (!input || !event.clipboardData) return;
+    event.preventDefault();
+    if (!selection || selection.table !== input.closest('table')) selectCell(input);
+    const grid = selectedGrid();
+    if (!grid || !Array.from(event.clipboardData.types || []).includes('text/plain')) return;
+    const text = event.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n').replace(/\n$/, '');
+    applyValues(grid, text.split('\n').map(line => line.split('\t')));
   });
 })();

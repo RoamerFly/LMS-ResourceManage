@@ -1382,9 +1382,16 @@ tr:hover td { background: var(--surface-soft); }
   background: var(--primary-light) !important;
   box-shadow: inset 0 0 0 1px var(--primary);
 }
+.spreadsheet td.sheet-selected { outline: none; }
 .spreadsheet td.sheet-active > input.cell-input {
   box-shadow: inset 0 0 0 2px var(--primary);
 }
+#spreadsheetWrap input[data-emp],
+#qcDeptTablesWrap input.qc-price-input,
+#qcDeptTablesWrap input.qc-qty-input { cursor: cell; }
+#spreadsheetWrap input[data-emp]:focus,
+#qcDeptTablesWrap input.qc-price-input:focus,
+#qcDeptTablesWrap input.qc-qty-input:focus { cursor: text; }
 .cell-input.emp-cell { text-align: right; }
 .cell-input.order-cell { text-align: left; font-weight: 600; color: var(--primary-dark); }
 .cell-input.model-cell { text-align: left; color: var(--text); font-size: calc(var(--table-font-size) - 1px); }
