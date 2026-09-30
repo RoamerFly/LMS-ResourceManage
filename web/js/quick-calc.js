@@ -333,7 +333,7 @@ function onQcCellFocus(el, type) {
 // ---- 单元格失去焦点 ----
 function onQcCellBlur(el, type) {
   const rawVal = el.value.trim();
-  const val = rawVal === '' ? 0 : (parseInt(rawVal) || 0);
+  const val = rawVal === '' ? 0 : ((type === 'price' ? parseFloat(rawVal) : parseInt(rawVal)) || 0);
   
   // 检查值是否变化，变化才保存历史（按单元格撤销）
   let hasChanged = false;
