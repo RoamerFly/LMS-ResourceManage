@@ -1917,6 +1917,24 @@ body * {
   -webkit-user-select: text;
 }
 
+/* 表格按单元格选择；必须覆盖上方全局允许选中文字的规则。 */
+#spreadsheetWrap .spreadsheet,
+#spreadsheetWrap .spreadsheet *,
+#qcDeptTablesWrap .spreadsheet,
+#qcDeptTablesWrap .spreadsheet *,
+body.sheet-range-dragging,
+body.sheet-range-dragging * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+#spreadsheetWrap .spreadsheet input.sheet-editing,
+#qcDeptTablesWrap .spreadsheet input.sheet-editing {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .member-drag-handle,
 .salary-drag-handle,
 .bank-drag-handle,

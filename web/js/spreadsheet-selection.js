@@ -1,9 +1,25 @@
 // 做货编辑和快捷计算共用的可编辑单元格区域选择与剪贴板操作。
 (() => {
   const selector = '#spreadsheetWrap input[data-emp], #qcDeptTablesWrap input.qc-price-input, #qcDeptTablesWrap input.qc-qty-input';
+  const tableSelector = '#spreadsheetWrap table.spreadsheet, #qcDeptTablesWrap table.spreadsheet';
   let selection = null;
   let dragging = false;
+  let editingInput = null;
   const gridCache = new WeakMap();
+
+  function endDrag() {
+    dragging = false;
+    document.body.classList.remove('sheet-range-dragging');
+  }
+
+  function endEdit() {
+    editingInput?.classList.remove('sheet-editing');
+    editingInput = null;
+  }
+
+  function clearNativeSelection() {
+    window.getSelection()?.removeAllRanges();
+  }
 
   function cellFrom(target) {
     if (!(target instanceof Element)) return null;
@@ -80,6 +96,8 @@
   }
 
   function focusCell(input, extend = false) {
+    endEdit();
+    clearNativeSelection();
     selectCell(input, extend);
     const td = input.closest('td');
     td.tabIndex = -1;
@@ -88,6 +106,10 @@
   }
 
   function beginEdit(input, firstKey = null) {
+    endDrag();
+    endEdit();
+    editingInput = input;
+    input.classList.add('sheet-editing');
     input.focus();
     if (firstKey !== null) {
       input.value = firstKey;
@@ -107,33 +129,68 @@
 
   document.addEventListener('focusin', event => {
     const input = event.target.matches?.(selector) ? event.target : null;
-    if (input) selectCell(input);
+    if (input) {
+      // 新增行的自动聚焦、复制后恢复焦点也需要同步编辑状态。
+      if (editingInput !== input) {
+        endEdit();
+        editingInput = input;
+        input.classList.add('sheet-editing');
+      }
+      selectCell(input);
+    }
   });
+  document.addEventListener('focusout', event => {
+    if (event.target === editingInput) endEdit();
+  });
+
+  // 浏览器的文字选区与单元格选区互斥；只在主动编辑输入框时放行。
+  document.addEventListener('selectstart', event => {
+    const element = event.target instanceof Element ? event.target : event.target?.parentElement;
+    const inTable = element?.closest(tableSelector);
+    if (dragging || (inTable && event.target !== editingInput)) event.preventDefault();
+  }, true);
+  document.addEventListener('dragstart', event => {
+    if (dragging || (event.target instanceof Element && event.target.closest(tableSelector))) {
+      event.preventDefault();
+    }
+  }, true);
 
   document.addEventListener('mousedown', event => {
     if (event.button !== 0) return;
     const input = cellFrom(event.target);
     if (!input) {
-      dragging = false;
+      endDrag();
+      if (event.target instanceof Element && event.target.closest(tableSelector)) clearNativeSelection();
+      return;
+    }
+    // 双击/F2 后再次点当前输入框时，允许调整光标或选择正在编辑的数字。
+    if (input === editingInput && document.activeElement === input && !event.shiftKey) {
+      endDrag();
       return;
     }
     event.preventDefault();
     const extend = event.shiftKey && selection?.table === input.closest('table');
     focusCell(input, extend);
     dragging = true;
-  });
+    document.body.classList.add('sheet-range-dragging');
+  }, true);
 
   document.addEventListener('dblclick', event => {
     const input = cellFrom(event.target);
-    if (input) beginEdit(input);
-  });
+    if (input) {
+      event.preventDefault();
+      clearNativeSelection();
+      beginEdit(input);
+    }
+  }, true);
 
   document.addEventListener('mouseover', event => {
     if (!dragging || !(event.buttons & 1)) return;
     const input = cellFrom(event.target);
     if (input && input.closest('table') === selection?.table) selectCell(input, true);
   });
-  document.addEventListener('mouseup', () => { dragging = false; });
+  document.addEventListener('mouseup', endDrag, true);
+  window.addEventListener('blur', endDrag);
 
   function selectionText() {
     const grid = selectedGrid();
