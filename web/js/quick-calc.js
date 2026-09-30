@@ -59,8 +59,8 @@ async function initQuickCalc() {
 
   // 保存初始状态到历史栈（清空之前的历史）
   clearHistory();
-  pushHistory('quick-calc');
 
+  await window.LmsSpreadsheet?.loadLayout('quick-calc', document.getElementById('qcYear').value, document.getElementById('qcMonth').value, _qcState.qcViewMode);
   renderQcDeptTables();
 }
 
@@ -68,6 +68,7 @@ async function initQuickCalc() {
 function renderQcDeptTables() {
   const wrap = document.getElementById('qcDeptTablesWrap');
   if (!wrap) return;
+  window.LmsSpreadsheet?.dispose(wrap);
 
   const { departments, subDepartments } = _qcState;
   const employees = orderEmployeesByDisplayPreference('quickcalc', _qcState.employees);
@@ -213,7 +214,7 @@ function renderQcDeptTables() {
         }
 
         // 行合计
-        html += `<td class="row-total-display${isWage ? ' wage' : ''}${rowCompact}" style="background:#fef9c3;font-weight:700;color:#92400e;text-align:center;">${rowDisplay}</td>`;
+        html += `<td data-sheet-value="${rowTotal}" class="row-total-display${isWage ? ' wage' : ''}${rowCompact}" style="background:#fef9c3;font-weight:700;color:#92400e;text-align:center;">${rowDisplay}</td>`;
 
         html += '</tr>';
       }
@@ -239,6 +240,7 @@ function renderQcDeptTables() {
 
   wrap.innerHTML = html;
   document.getElementById('qcGrandTotal').textContent = '¥' + fmt(grandTotal);
+  window.LmsSpreadsheet?.mount(wrap, 'quick-calc');
 }
 
 // ---- 单元格获得焦点 ----
@@ -591,6 +593,7 @@ function updateDeptRowTotals(rowKey) {
         const totalEl = tr.querySelector('.row-total-display');
         if (totalEl) {
           rowTotal = isWage ? roundNumber(rowTotal) : rowTotal;
+          totalEl.dataset.sheetValue = String(rowTotal);
           const rowDisplay = isWage ? (rowTotal > 0 ? fmtCompact(rowTotal) : '') : rowTotal;
           const rowCompact = String(rowDisplay).length > 8 ? ' compact' : '';
           totalEl.textContent = rowDisplay;
@@ -621,6 +624,7 @@ function updateDeptRowTotals(rowKey) {
 
 // ---- 添加行 ----
 function addQcDeptRow(deptId) {
+  pushHistory('quick-calc');
   const deptRowKeys = Object.keys(_qcDeptRows).filter(k => k.startsWith(deptId + '_'));
   const maxIdx = deptRowKeys.length > 0
     ? Math.max(...deptRowKeys.map(k => parseInt(k.split('_')[1])))
@@ -635,15 +639,13 @@ function addQcDeptRow(deptId) {
   }
   _qcDeptRows[rowKey] = row;
 
-  // 保存历史记录（添加行后保存，确保包含新行）
-  pushHistory('quick-calc');
-
   renderQcDeptTables();
   autoSaveQc(); // 添加行后自动保存
 }
 
 // ---- 删除行 ----
 function removeQcDeptRow(rowKey) {
+  pushHistory('quick-calc');
   const deptId = rowKey.split('_')[0];
   const deptRowKeys = Object.keys(_qcDeptRows).filter(k => k.startsWith(deptId + '_'));
 
@@ -658,8 +660,6 @@ function removeQcDeptRow(rowKey) {
     for (const sub of deptSubs) {
       row[sub.id] = 0;
     }
-    // 保存历史记录（清空行后保存）
-    pushHistory('quick-calc');
     renderQcDeptTables();
     autoSaveQc(); // 清空行后自动保存
     return;
@@ -672,9 +672,6 @@ function removeQcDeptRow(rowKey) {
   }
 
   delete _qcDeptRows[rowKey];
-
-  // 保存历史记录（删除行后保存，确保不包含已删除的行）
-  pushHistory('quick-calc');
 
   renderQcDeptTables();
   saveQcState();
@@ -716,6 +713,7 @@ async function saveQcState() {
 
 // ---- 清空对数 ----
 function clearQcInputs() {
+  pushHistory('quick-calc');
   _qcState.qtyData = {};
   renderQcDeptTables();
   saveQcState();
@@ -723,6 +721,7 @@ function clearQcInputs() {
 
 // ---- 清空单价 ----
 function clearQcPrices() {
+  pushHistory('quick-calc');
   // 遍历所有行的单价，重置为0
   for (const rowKey in _qcDeptRows) {
     const row = _qcDeptRows[rowKey];
@@ -770,6 +769,7 @@ async function qcToggleViewMode() {
       }
       toast('对数视角', 'info');
     }
+    await window.LmsSpreadsheet?.loadLayout('quick-calc', document.getElementById('qcYear').value, document.getElementById('qcMonth').value, _qcState.qcViewMode);
     renderQcDeptTables();
   } catch (e) {
     console.error('快捷计算切换工资视角失败', e);

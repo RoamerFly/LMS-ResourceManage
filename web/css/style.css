@@ -1918,6 +1918,19 @@ body * {
 }
 
 /* 表格按单元格选择；必须覆盖上方全局允许选中文字的规则。 */
+.lms-sheet-host, .lms-sheet-host * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.lms-sheet-host input, .lms-sheet-host textarea,
+.lms-sheet-host [contenteditable="true"], .lms-sheet-host [contenteditable="true"] * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+.lms-sheet-host { height: clamp(420px, calc(100vh - 260px), 760px); min-width: 0; position: relative; }
+.lms-sheet-source[hidden] { display: none !important; }
+.lms-sheet-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px; border-bottom: 1px solid var(--border); background: #f8fafc; }
+.lms-sheet-hint { font-size: 12px; color: var(--text-muted); margin-right: auto; }
 #spreadsheetWrap .spreadsheet,
 #spreadsheetWrap .spreadsheet *,
 #qcDeptTablesWrap .spreadsheet,

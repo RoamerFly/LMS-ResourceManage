@@ -251,6 +251,7 @@ function pushHistory(type) {
   }
 
   if (!snapshot) return;
+  snapshot.sheetWorkbook = window.LmsSpreadsheet?.capture(type) || null;
 
   _undoStack.push(snapshot);
   // 限制历史记录数量
@@ -287,6 +288,7 @@ async function undo() {
     };
   }
   _redoStack.push(redoSnapshot);
+  redoSnapshot.sheetWorkbook = window.LmsSpreadsheet?.capture(currentSnapshot.type) || null;
   
   // 恢复到历史状态
   await restoreSnapshot(currentSnapshot);
@@ -318,6 +320,7 @@ async function redo() {
     };
   }
   _undoStack.push(currentSnapshot);
+  currentSnapshot.sheetWorkbook = window.LmsSpreadsheet?.capture(redoSnapshot.type) || null;
   
   // 恢复到重做状态
   await restoreSnapshot(redoSnapshot);
@@ -326,6 +329,7 @@ async function redo() {
 
 // 恢复快照
 async function restoreSnapshot(snapshot) {
+  window.LmsSpreadsheet?.prepareRestore(snapshot.type, snapshot.sheetWorkbook);
   if (snapshot.type === 'work-edit') {
     if (typeof _weRowMap !== 'undefined' && typeof renderSpreadsheet === 'function') {
       _weRowMap = JSON.parse(JSON.stringify(snapshot.weRowMap));
@@ -384,6 +388,7 @@ function clearHistory() {
 
 // 键盘快捷键监听
 document.addEventListener('keydown', async (e) => {
+  if (e.defaultPrevented) return;
   // Ctrl+Z 撤销
   if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
     e.preventDefault();

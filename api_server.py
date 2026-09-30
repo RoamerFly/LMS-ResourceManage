@@ -41,6 +41,7 @@ app.add_middleware(
 app.mount("/js", StaticFiles(directory=os.path.join(WEB_DIR, "js")), name="js")
 # 挂载 CSS 目录
 app.mount("/css", StaticFiles(directory=os.path.join(WEB_DIR, "css")), name="css")
+app.mount("/vendor", StaticFiles(directory=os.path.join(WEB_DIR, "vendor")), name="vendor")
 
 # 确保用户字体目录存在
 os.makedirs(USER_FONTS_DIR, exist_ok=True)

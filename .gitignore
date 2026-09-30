@@ -8,3 +8,4 @@ __pycache__/
 data.db
 seed_data.py
 b.json
+/node_modules/

@@ -115,8 +115,8 @@ async function loadWorkRecords() {
 
   // 保存初始状态到历史栈（清空之前的历史）
   clearHistory();
-  pushHistory("work-edit");
 
+  await window.LmsSpreadsheet?.loadLayout('work-edit', _state.currentYear, _state.currentMonth, _state.viewMode);
   renderSpreadsheet();
 }
 
@@ -132,6 +132,7 @@ function renderSpreadsheet() {
   const isSingleMode = true;
   const empsPerGroup = emps.length;
   const wrap = document.getElementById("spreadsheetWrap");
+  window.LmsSpreadsheet?.dispose(wrap);
 
   if (!emps.length) {
     wrap.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 1 1 0 10h-2M8 12h8"/></svg><div>请先在成员管理中添加员工</div></div>`;
@@ -163,7 +164,7 @@ function renderSpreadsheet() {
   }
 
   function calcRowTotal(rowData) {
-    if (!rowData || rowData.modelId === 0) return 0;
+    if (!rowData) return 0;
     let total = 0;
     for (const emp of emps) {
       const qty = rowData.emps[emp.id] || 0;
@@ -297,7 +298,7 @@ function renderSpreadsheet() {
             onclick="openWorkChoiceMenu(event,this)">${escHtml(modelLabel)}</button>
         </td>
         ${empCells}
-        <td class="row-total${isWage ? " wage" : ""}${compact}"
+        <td data-sheet-value="${rowTotal}" class="row-total${isWage ? " wage" : ""}${compact}"
           style="font-weight:700;text-align:center;background:var(--work-total-bg);color:var(--work-total-text);">
           ${totalDisplay}
         </td>
@@ -324,6 +325,7 @@ function renderSpreadsheet() {
   }
 
   wrap.innerHTML = `${tablesHtml}<button class="row-add-btn" onclick="addWorkRow()">+ 添加一行</button>`;
+  window.LmsSpreadsheet?.mount(wrap, 'work-edit');
 }
 
 // ─────────────────────────────────────────────────────────
@@ -684,6 +686,7 @@ async function onWorkSelectChange(sel) {
   const newModelId = type === "model" ? newVal : oldModelId;
 
   if (newOrderId === oldOrderId && newModelId === oldModelId) return;
+  pushHistory('work-edit');
 
   const year = _state.currentYear;
   const month = _state.currentMonth;
@@ -691,8 +694,6 @@ async function onWorkSelectChange(sel) {
 
   // 回到"请选择"：只更新状态，保留 lineId（旧 DB 记录不删）
   if (newOrderId === 0 || newModelId === 0) {
-    // 保存历史记录（修改前保存）
-    pushHistory("work-edit");
     rowData.orderId = newOrderId;
     rowData.modelId = newModelId;
     renderSpreadsheet();
@@ -724,9 +725,6 @@ async function onWorkSelectChange(sel) {
     delete _weRowMap[mapKey];
   }
 
-  // 保存历史记录（修改后保存，确保 key 一致）
-  pushHistory("work-edit");
-
   // emps 保留（用户可能已填了对数）
   renderSpreadsheet();
   autoSaveWorkRecords();
@@ -736,6 +734,7 @@ async function onWorkSelectChange(sel) {
 // addWorkRow：新增一行（分配 lineId = ++_weMaxLineId，排在最前）
 // ─────────────────────────────────────────────────────────
 function addWorkRow() {
+  pushHistory('work-edit');
   const orders = _state.workOrders || [];
   const models = _state.workModels || [];
   const newLineId = ++_weMaxLineId;
@@ -770,16 +769,13 @@ function addWorkRow() {
     }).catch((e) => console.error("保存新行失败", e));
   }
 
-  // 保存历史记录（添加行后保存，确保包含新行）
-  pushHistory("work-edit");
-
   renderSpreadsheet();
 
   setTimeout(() => {
     const inp = document.querySelector(
-      `#spreadsheetWrap input[data-row="${numericRowId}"]`,
+      `#spreadsheetWrap input[data-row="${rowKey}"]`,
     );
-    if (inp) inp.focus();
+    if (inp && !window.LmsSpreadsheet?.focusInput(inp)) inp.focus();
   }, 50);
 }
 
@@ -791,13 +787,10 @@ function addWorkRow() {
 async function deleteWorkRow(rowId) {
   const rowData = _weRowMap[rowId];
   if (!rowData) return;
-
+  pushHistory('work-edit');
   const { orderId, modelId, lineId } = rowData;
 
   delete _weRowMap[rowId];
-
-  // 保存历史记录（删除行后保存，确保不包含已删除的行）
-  pushHistory("work-edit");
 
   renderSpreadsheet();
 
@@ -853,6 +846,7 @@ function updateRowTotal(rowId) {
     if (rowTr) {
       const totalEl = rowTr.querySelector(".row-total");
       if (totalEl) {
+        totalEl.dataset.sheetValue = String(rowTotal);
         totalEl.textContent = displayVal;
         totalEl.className = `row-total${isWage ? " wage" : ""}${compact}`;
       }
@@ -934,6 +928,7 @@ async function toggleViewMode() {
       btn.style.color = "#92400e";
       toast("对数视角", "info");
     }
+    await window.LmsSpreadsheet?.loadLayout('work-edit', _state.currentYear, _state.currentMonth, _state.viewMode);
     renderSpreadsheet();
   } catch (e) {
     console.error("切换工资视角失败", e);

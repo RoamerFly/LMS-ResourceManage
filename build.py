@@ -9,10 +9,31 @@ import sys
 import shutil
 import subprocess
 import tempfile
+import hashlib
+import json
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_NAME = '立杰工资管理系统'
 USER_DATA_NAMES = ('data.db', 'window_settings.json', 'fonts')
+
+
+def prepare_spreadsheet_assets():
+    """构建或核对离线表格资源，失败时保留旧 dist。"""
+    node = shutil.which('node')
+    deps = os.path.join(PROJECT_DIR, 'node_modules', 'esbuild')
+    if node and os.path.isdir(deps):
+        subprocess.run([node, 'scripts/build-spreadsheet.cjs'], cwd=PROJECT_DIR, check=True)
+    vendor = os.path.join(PROJECT_DIR, 'web', 'vendor', 'univer')
+    for name in ('univer.js', 'univer.css', 'LICENSE', 'build-manifest.json'):
+        if not os.path.isfile(os.path.join(vendor, name)):
+            raise RuntimeError('缺少离线表格资源，请先运行 npm ci 和 npm run build:sheet。')
+    with open(os.path.join(vendor, 'build-manifest.json'), encoding='utf-8') as handle:
+        manifest = json.load(handle)
+    for relative, expected in manifest.items():
+        with open(os.path.join(PROJECT_DIR, relative), 'rb') as handle:
+            actual = hashlib.sha256(handle.read().replace(b'\r\n', b'\n')).hexdigest()
+        if actual != expected:
+            raise RuntimeError('离线表格资源与源码不一致，请运行 npm ci 和 npm run build:sheet。')
 
 
 def find_build_python():
@@ -112,6 +133,7 @@ def build(debug=False):
     # 缺依赖时保留上一次可用的 dist，不生成缺少服务模块的 exe。
     build_python = find_build_python()
     print(f"[Build] Python: {build_python}")
+    prepare_spreadsheet_assets()
 
     backup_dir = backup_user_data()
     try:

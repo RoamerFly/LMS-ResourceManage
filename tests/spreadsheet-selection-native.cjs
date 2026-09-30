@@ -12,7 +12,8 @@ async function main() {
   const tempRoot = await fs.realpath(os.tmpdir());
   const profile = await fs.mkdtemp(path.join(tempRoot, 'lms-sheet-native-'));
   const edge = process.env.EDGE_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-  const url = pathToFileURL(path.join(__dirname, 'spreadsheet-selection.html')).href + '?manual=1';
+  const engineTest = process.argv.includes('--engine');
+  const url = pathToFileURL(path.join(__dirname, engineTest ? 'spreadsheet-engine.html' : 'spreadsheet-selection.html')).href + '?manual=1';
   const browser = spawn(edge, ['--headless=new', '--disable-gpu', '--no-first-run',
     `--user-data-dir=${profile}`, '--remote-debugging-port=0', url], { windowsHide: true, stdio: 'ignore' });
   let launchError;
@@ -28,7 +29,7 @@ async function main() {
     }
     assert.ok(port, 'Edge 调试端口启动');
     const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
-    const target = targets.find(item => item.type === 'page' && item.url.includes('spreadsheet-selection.html'));
+    const target = targets.find(item => item.type === 'page' && item.url.includes(engineTest ? 'spreadsheet-engine.html' : 'spreadsheet-selection.html'));
     assert.ok(target, '找到测试页面');
     socket = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => {
@@ -90,6 +91,10 @@ async function main() {
       await call('Input.dispatchKeyEvent', { type: 'keyUp', key: name, windowsVirtualKeyCode: code, modifiers });
     };
     const noNativeSelection = async label => assert.equal(await evaluate('getSelection().toString()'), '', label);
+    if (engineTest) {
+      await require('./spreadsheet-engine-cases.cjs')({ evaluate, call, click, drag, key, mouse, delay });
+      return;
+    }
     const first = '#spreadsheetWrap input[data-row="r1"][data-emp="1"]';
     const last = '#spreadsheetWrap input[data-row="r2"][data-emp="2"]';
 
