@@ -205,8 +205,8 @@ function ensureMemberOrderSyncSwitch(page, toolbar, onChange) {
     label = document.createElement('label');
     label.className = 'order-sync-toggle';
     label.id = id;
-    label.innerHTML = `<input type="checkbox"><span>${page === 'quickcalc' ? '同步成员顺序' : '显示顺序同步成员管理页'}</span>`;
-    label.title = '显示顺序同步成员管理页';
+    label.innerHTML = `<input type="checkbox"><span>${page === 'quickcalc' ? '同步成员顺序' : '显示顺序同步人员管理页'}</span>`;
+    label.title = '显示顺序同步人员管理页';
     toolbar.appendChild(label);
   }
 
@@ -403,7 +403,31 @@ document.addEventListener('keydown', async (e) => {
 });
 
 // 工资数据源开关（持久化到数据库 + localStorage）
+function isMinimalMode() {
+  return typeof _currentSettings !== 'undefined' && (_currentSettings.minimalMode === true || _currentSettings.minimalMode === 'true');
+}
+
+function applyMinimalMode(enabled) {
+  document.body.classList.toggle('minimal-mode', enabled);
+  document.querySelectorAll('.btn-back-home').forEach(button => {
+    button.textContent = enabled ? '返回快捷计算' : '🏠 返回主页';
+  });
+  requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+}
+
+async function onMinimalModeChange(enabled) {
+  const control = document.getElementById('s-minimalMode');
+  control.disabled = true;
+  try {
+    await saveLeavingSpreadsheet('settings');
+    applySetting('minimalMode', enabled, true);
+    await saveSettings(true);
+    await navigateTo(enabled ? 'quickcalc' : 'settings');
+  } finally { control.disabled = false; }
+}
+
 function toggleQcSalary(enabled) {
+  if (isMinimalMode()) return;
   const val = enabled ? 'true' : 'false';
   localStorage.setItem('useQcSalary', val);
   post('/api/app-settings', { key: 'useQcSalary', value: val });

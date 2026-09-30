@@ -1,6 +1,19 @@
 // ============================================================
 // 订单管理
 // ============================================================
+async function switchOrderPanel(panel) {
+  const prices = panel === 'prices';
+  document.getElementById('orderRecordsPanel').hidden = prices;
+  document.getElementById('orderPricesPanel').hidden = !prices;
+  for (const [id, active] of [['orderRecordsTab', !prices], ['orderPricesTab', prices]]) {
+    const tab = document.getElementById(id);
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  }
+  if (prices) await loadPriceTable();
+  else await loadOrders({ animate: false });
+}
+
 async function loadOrders(options = {}) {
   const { animate = true } = options;
   const year = parseInt(document.getElementById('orderYear').value);

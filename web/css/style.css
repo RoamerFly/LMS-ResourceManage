@@ -2117,3 +2117,81 @@ body.sheet-range-dragging * {
   line-height: 1;
   letter-spacing: 1px;
 }
+
+/* 人员与订单管理的合并入口 */
+.personnel-toolbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+.personnel-toolbar > :last-child { justify-self: end; }
+.personnel-toolbar > .flex { flex-wrap: wrap; min-width: 0; }
+.personnel-dept-button { justify-self: center; border-radius: 12px; padding: 9px 24px; }
+.order-tabs { display: flex; justify-content: center; gap: 8px; margin: 8px 0 14px; }
+.order-tabs .btn { padding: 9px 24px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text-muted); border-radius: 12px; }
+.order-tabs .btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+.order-panel[hidden], .department-create-form[hidden] { display: none; }
+
+/* 大弹窗中的自顶向下组织树 */
+.modal.department-modal { width: min(1180px, 94vw); max-width: 94vw; min-width: 0; height: min(800px, 88vh); display: flex; flex-direction: column; padding: 24px; border-radius: 20px; }
+.department-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+.department-modal-header h2 { font-size: var(--font-size-20) !important; }
+.department-modal-header p { color: var(--text-muted); margin-top: 6px; }
+.department-tree-scroll { flex: 1; min-height: 0; overflow: auto; padding: 28px 12px; }
+.organization-chart { width: max-content; min-width: 100%; text-align: center; padding-bottom: 16px; }
+.organization-root { position: relative; display: inline-flex; flex-direction: column; gap: 12px; align-items: center; padding: 16px 24px; background: var(--primary); color: white; border-radius: 16px; min-width: 240px; }
+.organization-root > strong { font-size: var(--font-size-16); }
+.organization-root > .btn { background: var(--card-bg); color: var(--primary-dark); }
+.organization-root::after { content: ''; position: absolute; height: 28px; border-left: 2px solid var(--border); left: 50%; top: 100%; }
+.organization-branches, .organization-children { list-style: none; }
+.organization-branches { display: flex; justify-content: center; align-items: flex-start; padding-top: 28px; }
+.organization-branch { position: relative; padding: 28px 14px 0; width: 290px; flex: 0 0 290px; }
+.organization-branch::before { content: ''; position: absolute; top: 0; left: 0; right: 0; border-top: 2px solid var(--border); }
+.organization-branch:first-child::before { left: 50%; }
+.organization-branch:last-child::before { right: 50%; }
+.organization-branch:only-child::before { border: none; }
+.organization-branch::after { content: ''; position: absolute; top: 0; left: 50%; height: 28px; border-left: 2px solid var(--border); }
+.department-node { border: 1px solid var(--border); border-radius: 14px; background: var(--card-bg); text-align: left; box-shadow: 0 2px 6px rgba(0,0,0,.04); }
+.department-parent { border-top: 3px solid var(--primary); padding: 16px; }
+.department-node-heading { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.department-node strong { overflow-wrap: anywhere; }
+.department-node span { color: var(--text-muted); font-size: var(--font-size-12); white-space: nowrap; }
+.department-node-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; }
+.organization-children { margin-left: 20px; padding-top: 8px; text-align: left; }
+.organization-children > li { position: relative; padding: 12px 0 0 20px; border-left: 2px solid var(--border); }
+.organization-children > li::before { content: ''; position: absolute; width: 20px; left: 0; top: 36px; border-top: 2px solid var(--border); }
+.department-child { padding: 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.department-child > div { display: flex; flex-direction: column; gap: 5px; }
+.department-empty { padding: 14px; color: var(--text-muted); }
+.department-create-form { padding: 12px; margin-top: 12px; border-radius: 10px; background: var(--bg); color: var(--text); text-align: left; display: flex; flex-direction: column; gap: 9px; max-width: 100%; }
+.department-create-form input { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--text); }
+
+/* 极简模式：整页快捷计算主页与顶部三张导航卡片 */
+.minimal-home, .minimal-nav { display: none; }
+body.minimal-mode > .sidebar { display: none; }
+body.minimal-mode .main { width: 100%; min-width: 0; }
+body.minimal-mode .topbar { height: 78px; padding: 8px 22px; display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; background: var(--bg); border-bottom: none; }
+body.minimal-mode .topbar-title, body.minimal-mode .topbar-hint, body.minimal-mode #topbarBackBtn { display: none !important; }
+body.minimal-mode .minimal-home { display: block; justify-self: start; background: none; border: none; color: var(--text); font: inherit; font-size: var(--font-size-20); font-weight: 700; cursor: pointer; text-align: left; }
+body.minimal-mode .minimal-home span { color: var(--primary); }
+body.minimal-mode .minimal-nav { display: flex; align-items: center; justify-content: center; gap: 12px; }
+body.minimal-mode .minimal-nav button { border: 1px solid var(--border); border-radius: 16px; min-width: 112px; height: 46px; padding: 0 20px; background: var(--card-bg); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; box-shadow: 0 3px 9px rgba(0,0,0,.05); transition: background .15s, transform .15s; }
+body.minimal-mode .minimal-nav button:hover { transform: translateY(-1px); border-color: var(--primary); }
+body.minimal-mode .minimal-nav button.active { background: var(--primary-light); border-color: var(--primary); color: var(--primary-dark); }
+body.minimal-mode .minimal-nav .minimal-salary { min-width: 142px; height: 58px; border-radius: 18px; font-size: var(--font-size-16); background: var(--primary); color: white; border-color: var(--primary); }
+body.minimal-mode .minimal-nav .minimal-salary.active { background: var(--primary-dark); color: white; }
+body.minimal-mode .topbar-date-selector { justify-self: end; margin: 0; }
+body.minimal-mode .content { padding: 6px 10px 10px; }
+body.minimal-mode #view-quickcalc .qc-card { border-radius: 14px; }
+body.minimal-mode .btn-back-home { border-radius: 12px; }
+@media (max-width: 1100px) {
+  .personnel-toolbar { grid-template-columns: 1fr 1fr; }
+  .personnel-toolbar > :last-child { grid-column: 2; grid-row: 1; justify-self: end; }
+  .personnel-dept-button { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (max-width: 760px) {
+  body.minimal-mode .topbar { grid-template-columns: 1fr; height: auto; padding: 10px; }
+  body.minimal-mode .minimal-home, body.minimal-mode .topbar-date-selector { display: none; }
+  body.minimal-mode .minimal-nav { grid-column: 1; gap: 8px; }
+  body.minimal-mode .minimal-nav button { min-width: 0; padding: 0 12px; }
+  body.minimal-mode .minimal-nav .minimal-salary { min-width: 120px; }
+}
+@media print {
+  body.minimal-mode .minimal-home, body.minimal-mode .minimal-nav { display: none !important; }
+}

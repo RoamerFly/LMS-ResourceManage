@@ -12,7 +12,7 @@ let _bankCardVisibilityLoaded = false;
 let _bankCardVisibilityValue = localStorage.getItem(BANK_CARD_VISIBILITY_KEY) === 'true';
 
 function getBankSalarySource() {
-  return localStorage.getItem('useQcSalary') === 'true' ? 'qc' : 'work';
+  return getSalarySource();
 }
 
 function getBankSalarySourceLabel(source) {

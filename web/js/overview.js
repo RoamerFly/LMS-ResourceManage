@@ -11,8 +11,8 @@ let overviewSuppressClickUntil = 0;
 const OVERVIEW_FEATURES = [
   {
     view: 'members',
-    title: '成员管理',
-    desc: '查看、添加和维护成员档案',
+    title: '人员管理',
+    desc: '维护人员档案与部门结构',
     iconBg: '#dbeafe',
     iconColor: '#2563eb',
     icon: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
@@ -42,28 +42,12 @@ const OVERVIEW_FEATURES = [
     icon: '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><path d="M6 15h5"/><path d="M15 15h3"/>',
   },
   {
-    view: 'departments',
-    title: '部门管理',
-    desc: '维护大部门和小部门结构',
-    iconBg: '#f1f5f9',
-    iconColor: '#475569',
-    icon: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>',
-  },
-  {
     view: 'orders',
     title: '订单管理',
-    desc: '管理订单及关联型号',
+    desc: '管理订单、型号与部门单价',
     iconBg: '#fef3c7',
     iconColor: '#d97706',
     icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
-  },
-  {
-    view: 'prices',
-    title: '型号单价表',
-    desc: '配置各型号在小部门的单价',
-    iconBg: '#ede9fe',
-    iconColor: '#7c3aed',
-    icon: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
   },
   {
     view: 'work',

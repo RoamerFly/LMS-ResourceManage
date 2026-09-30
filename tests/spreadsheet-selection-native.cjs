@@ -13,7 +13,8 @@ async function main() {
   const profile = await fs.mkdtemp(path.join(tempRoot, 'lms-sheet-native-'));
   const edge = process.env.EDGE_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
   const engineTest = process.argv.includes('--engine');
-  const liveTest = process.argv.includes('--live');
+  const managementTest = process.argv.includes('--management');
+  const liveTest = process.argv.includes('--live') || managementTest;
   let url = pathToFileURL(path.join(__dirname, engineTest ? 'spreadsheet-engine.html' : 'spreadsheet-selection.html')).href + '?manual=1';
   let browser, backend, stopBackend;
   let launchError;
@@ -124,7 +125,7 @@ async function main() {
         await stopBackend();
         await startBackend(apiPort);
       };
-      await require('./spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
+      await require(managementTest ? './management-mode-cases.cjs' : './spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
       return;
     }
     if (engineTest) {

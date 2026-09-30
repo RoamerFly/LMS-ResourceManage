@@ -110,8 +110,26 @@ def restore_user_data(backup_dir):
     print('[Build] User data restored')
 
 
+def ensure_dist_not_in_use():
+    """先检查 Windows 发行文件是否被加载，避免清理到一半才发现占用。"""
+    if os.name != 'nt':
+        return
+    app_dir = os.path.join(PROJECT_DIR, 'dist', APP_NAME)
+    for directory, _, files in os.walk(app_dir):
+        for name in files:
+            if not name.lower().endswith(('.exe', '.dll', '.pyd')):
+                continue
+            path = os.path.join(directory, name)
+            try:
+                with open(path, 'r+b'):
+                    pass
+            except PermissionError as exc:
+                raise RuntimeError(f'发行文件正在被占用，请先保存数据并关闭{APP_NAME}后重新构建：{path}') from exc
+
+
 def clean_build():
     """清理构建文件"""
+    ensure_dist_not_in_use()
     print("[Clean] Removing build files...")
     dirs_to_remove = ['build', 'dist']
     for d in dirs_to_remove:

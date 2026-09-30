@@ -30,6 +30,7 @@
     } else {
       applyAllSettings();
     }
+    if (isMinimalMode()) await navigateTo('quickcalc');
   } catch (err) {
     console.error('初始化失败:', err);
     document.getElementById('topbarHint').textContent = '系统初始化失败，请刷新重试';

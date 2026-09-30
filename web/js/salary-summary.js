@@ -5,7 +5,7 @@ let salaryDraggingEmpId = 0;
 let salaryDraggingDeptId = 0;
 
 function getSalarySource() {
-  return localStorage.getItem('useQcSalary') === 'true' ? 'qc' : 'work';
+  return isMinimalMode() || localStorage.getItem('useQcSalary') === 'true' ? 'qc' : 'work';
 }
 
 function getSalarySourceLabel(source) {

@@ -1,5 +1,5 @@
 // ============================================================
-// 成员管理
+// 人员管理
 // ============================================================
 let memberDraggingId = 0;
 let memberDraggingDeptId = 0;
@@ -320,7 +320,7 @@ async function showBatchAddMemberModal() {
   }
 
   openModal(`
-    <div class="modal-title">批量添加成员</div>
+    <div class="modal-title">批量添加人员</div>
     <div class="batch-add-toolbar">
       <button type="button" class="btn btn-sm" onclick="addBatchRow()">+ 添加行</button>
       <span style="font-size:var(--font-size-11);color:var(--text-muted);margin-left:8px;">直接填写姓名和部门，最后点击“批量添加”</span>
@@ -422,7 +422,7 @@ async function showAddMemberModal() {
   _state.departments = depts;
   _state.subDepartments = subs;
   openModal(`
-    <div class="modal-title">添加成员</div>
+    <div class="modal-title">添加人员</div>
     <div class="form-row">
       <div class="form-group"><label>姓名</label><input id="m-name" type="text" placeholder="输入姓名"></div>
       <div class="form-group"><label>性别</label><select id="m-gender"><option value="男">男</option><option value="女">女</option></select></div>
@@ -459,7 +459,7 @@ async function showEditMemberModal(empId) {
   _state.departments = depts;
   _state.subDepartments = subs;
   openModal(`
-    <div class="modal-title">编辑成员</div>
+    <div class="modal-title">编辑人员</div>
     <div class="form-row">
       <div class="form-group"><label>姓名</label><input id="m-name" type="text" value="${escHtml(emp.name)}"></div>
       <div class="form-group"><label>性别</label><select id="m-gender"><option value="男"${emp.gender === '男' ? ' selected' : ''}>男</option><option value="女"${emp.gender === '女' ? ' selected' : ''}>女</option></select></div>

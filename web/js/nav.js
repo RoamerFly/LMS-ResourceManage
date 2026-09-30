@@ -104,19 +104,29 @@ async function saveLeavingSpreadsheet(view) {
 }
 
 async function _doNavigateTo(view) {
+  const departmentShortcut = view === 'departments';
+  const priceShortcut = view === 'prices';
+  if (departmentShortcut) view = 'members';
+  if (priceShortcut) view = 'orders';
+  if (isMinimalMode() && !['quickcalc', 'members', 'salary', 'settings', 'member-detail'].includes(view)) view = 'quickcalc';
   await saveLeavingSpreadsheet(view);
 
   _currentView = view;
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   const navEl = document.querySelector(`.nav-item[data-view="${view}"]`);
   if (navEl) navEl.classList.add('active');
+  document.querySelectorAll('#minimalNav button').forEach(button => {
+    const active = button.dataset.view === view;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-current', active ? 'page' : 'false');
+  });
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   const viewEl = document.getElementById(`view-${view}`);
   viewEl.classList.add('active');
 
   const titles = {
     overview: '资源总览',
-    members: '成员管理',
+    members: '人员管理',
     departments: '部门管理',
     orders: '订单管理',
     prices: '型号单价表',
@@ -130,21 +140,20 @@ async function _doNavigateTo(view) {
   document.getElementById('topbarTitle').textContent = titles[view] || view;
 
   if (view === 'overview' && typeof renderOverviewCards === 'function') renderOverviewCards();
-  else if (view === 'members') loadMembers({ animate: false });
-  else if (view === 'departments') loadDepartments();
-  else if (view === 'orders') loadOrders({ animate: false });
-  else if (view === 'prices') loadPriceTable();
-  else if (view === 'work') { _state.viewMode = 'qty'; loadWorkRecords(); }
-  else if (view === 'salary') loadSalary({ animate: false });
-  else if (view === 'quickcalc') initQuickCalc();
-  else if (view === 'banking') loadBankAccounts({ animate: false });
+  else if (view === 'members') await loadMembers({ animate: false });
+  else if (view === 'orders') await switchOrderPanel(priceShortcut ? 'prices' : 'orders');
+  else if (view === 'work') { _state.viewMode = 'qty'; await loadWorkRecords(); }
+  else if (view === 'salary') await loadSalary({ animate: false });
+  else if (view === 'quickcalc') await initQuickCalc();
+  else if (view === 'banking') await loadBankAccounts({ animate: false });
   else if (view === 'settings') initSettingsPage();
+  if (departmentShortcut && view === 'members') await showDepartmentManager();
 }
 
 function navigateTo(view) {
   _navHistory = [];
-  _doNavigateTo(view);
   _updateBackBtn();
+  return _doNavigateTo(view);
 }
 
 function navigateWithHistory(view) {
@@ -168,13 +177,16 @@ function showEmployeeDetail(empId) {
 // ============================================================
 // 模态框
 // ============================================================
-function openModal(html) {
-  document.getElementById('modalBox').innerHTML = html;
+function openModal(html, className = '') {
+  const box = document.getElementById('modalBox');
+  box.className = 'modal' + (className ? ' ' + className : '');
+  box.innerHTML = html;
   document.getElementById('modalOverlay').classList.add('show');
 }
 
 function closeModal() {
   document.getElementById('modalOverlay').classList.remove('show');
+  document.getElementById('modalBox').classList.remove('department-modal');
 }
 
 function closeModalOnOverlay(e) {
@@ -188,6 +200,11 @@ async function _doNavigateToMemberDetail(empId) {
   await saveLeavingSpreadsheet('member-detail');
   _currentView = 'member-detail';
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('#minimalNav button').forEach(button => {
+    const active = button.dataset.view === 'members';
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-current', active ? 'page' : 'false');
+  });
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   const detailView = document.getElementById('view-member-detail');
   detailView.classList.add('active');
@@ -407,7 +424,7 @@ async function loadMemberDetail(empId) {
   });
 
   try {
-    const source = localStorage.getItem('useQcSalary') === 'true' ? 'qc' : 'work';
+    const source = getSalarySource();
     const data = await get(`/api/employees/${empId}/work-history?source=${source}`);
     if (!data) {
       content.innerHTML = '<div class="empty-state">未找到该成员</div>';
@@ -428,7 +445,7 @@ async function loadMemberDetail(empId) {
     const summaryCard = `
       <div class="md-summary-card">
         <div class="md-summary-info">
-          <div class="md-summary-name member-list-name-color" onclick="showEditMemberModal(${emp.id})" title="点击编辑成员信息" style="cursor:pointer;">${escHtml(emp.name)}</div>
+          <div class="md-summary-name member-list-name-color" onclick="showEditMemberModal(${emp.id})" title="点击编辑人员信息" style="cursor:pointer;">${escHtml(emp.name)}</div>
           <div class="md-summary-meta">
             <span class="member-gender-badge">${emp.gender === '女' ? '♀' : '♂'}</span>
             <span class="dept-large">${escHtml(emp.dept_name)}</span>

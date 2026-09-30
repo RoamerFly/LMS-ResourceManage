@@ -2,6 +2,7 @@
 // 系统设置
 // ============================================================
 const DEFAULT_SETTINGS = {
+  minimalMode: false,
   themeMode: 'light',
   radius: '8px',
   shadow: '0 2px 8px rgba(0,0,0,0.08)',
@@ -157,6 +158,7 @@ let _systemThemeWatcherBound = false;
 
 function normalizeSettings(settings) {
   const normalized = { ...settings };
+  normalized.minimalMode = normalized.minimalMode === true || normalized.minimalMode === 'true';
   // 升级旧版默认的 220px 留白为自动适应文字；仍支持手动调整。
   if (!normalized['sidebar-width'] || String(normalized['sidebar-width']) === '220') normalized['sidebar-width'] = 'auto';
   LEGACY_FONT_SETTING_KEYS.forEach(key => delete normalized[key]);
@@ -268,6 +270,10 @@ function applySetting(key, value, skipSave = false) {
   const root = document.documentElement;
 
   switch (key) {
+    case 'minimalMode':
+      applyMinimalMode(value === true || value === 'true');
+      if (!skipSave) void navigateTo(isMinimalMode() ? 'quickcalc' : 'settings');
+      break;
     case 'themeMode':
       applyThemeMode(value);
       break;
