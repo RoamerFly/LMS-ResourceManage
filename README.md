@@ -237,6 +237,8 @@ python build.py --clean
 
 打包使用 PyInstaller 的 `--onedir` 模式，产物位于 `dist/立杰工资管理系统/`。发布到其他电脑时，复制整个产物文件夹即可，不需要目标电脑安装 Python。
 
+打包脚本优先使用项目的 `venv`，并在清理旧产物前检查 FastAPI、Uvicorn 等运行依赖和 PyInstaller；缺少依赖时会停止构建。首次打包可先在项目虚拟环境中安装 `requirements.txt` 和 PyInstaller。
+
 打包内容包含：
 
 - `web/` 前端页面资源。
