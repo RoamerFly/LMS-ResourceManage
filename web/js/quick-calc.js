@@ -4,9 +4,16 @@
 let _qcViewModeBusy = false;
 let qcColumnDraggingEmpId = 0;
 let qcColumnDraggingDeptId = 0;
+let _qcLoadedPeriod = null;
+let _qcSaveQueue = Promise.resolve();
 
 // ---- 初始化 ----
 async function initQuickCalc() {
+  if (window.LmsSpreadsheet?.getInstance('qcDeptTablesWrap')) {
+    await window.LmsSpreadsheet.flush('quick-calc');
+    clearTimeout(window._qcAutoSaveTimer);
+    await autoSaveQc();
+  }
   const [emps, depts, subs] = await Promise.all([
     get('/api/employees'),
     get('/api/departments'),
@@ -24,6 +31,7 @@ async function initQuickCalc() {
   const year = parseInt(document.getElementById('qcYear')?.value || _state.currentYear);
   const month = parseInt(document.getElementById('qcMonth')?.value || _state.currentMonth);
   const saved = await get(`/api/quick-calc-save?year=${year}&month=${month}`);
+  _qcLoadedPeriod = { year, month };
 
   if (saved && saved.dept_rows && Object.keys(saved.dept_rows).length > 0) {
     _qcDeptRows = { ...saved.dept_rows };
@@ -111,9 +119,8 @@ function renderQcDeptTables() {
       const zebraCls = (typeof _currentSettings !== 'undefined' && _currentSettings['table-zebra']) ? ' table-zebra' : '';
       html += `<div class="spreadsheet-wrap qc-dept-table-wrap"><table class="spreadsheet${isWage ? ' wage-view' : ''}${zebraCls}">`;
 
-      // 表头 - 只有单价列和成员列，没有型号列，操作列在最左边
+      // 表头仅包含业务数据；删除操作放在表格上方工具栏。
       html += '<thead><tr>';
-      html += `<th style="min-width:58px;width:58px;background:#059669;color:#fff;position:sticky;top:0;z-index:10;text-align:center;">操作</th>`;
       for (const sub of deptSubs) {
         html += `<th style="min-width:70px;width:70px;background:#d1fae5;color:#065f46;position:sticky;top:0;z-index:10;text-align:center;">
           ${escHtml(sub.name)}<br><span class="qc-th-subtext">单价</span>
@@ -152,10 +159,6 @@ function renderQcDeptTables() {
 
         html += `<tr data-row-key="${escHtml(rowKey)}">`;
 
-        // 操作列（删除按钮）- 移到最左边
-        html += `<td style="text-align:center;">
-          <button class="btn btn-sm qc-row-delete-btn" style="padding:4px 10px;background:#fee2e2;color:#dc2626;" onclick="removeQcDeptRow('${escHtml(rowKey)}')">删除</button>
-        </td>`;
 
         // 各小部门单价列（纯手动输入）
         for (const sub of deptSubs) {
@@ -679,24 +682,22 @@ function removeQcDeptRow(rowKey) {
 
 // ---- 自动保存快捷计算状态 ----
 async function autoSaveQc() {
-  const year = parseInt(document.getElementById('qcYear')?.value || _state.currentYear);
-  const month = parseInt(document.getElementById('qcMonth')?.value || _state.currentMonth);
-  await post('/api/quick-calc-save', {
+  const year = _qcLoadedPeriod?.year ?? parseInt(document.getElementById('qcYear')?.value || _state.currentYear);
+  const month = _qcLoadedPeriod?.month ?? parseInt(document.getElementById('qcMonth')?.value || _state.currentMonth);
+  const payload = JSON.parse(JSON.stringify({
     year, month,
     dept_rows: _qcDeptRows,
     qty_data: _qcState.qtyData,
-  });
+  }));
+  const saved = _qcSaveQueue.catch(() => {}).then(() => post('/api/quick-calc-save', payload));
+  _qcSaveQueue = saved;
+  return saved;
 }
 
 // ---- 手动保存 ----
 async function saveQcState() {
-  const year = parseInt(document.getElementById('qcYear')?.value || _state.currentYear);
-  const month = parseInt(document.getElementById('qcMonth')?.value || _state.currentMonth);
-  await post('/api/quick-calc-save', {
-    year, month,
-    dept_rows: _qcDeptRows,
-    qty_data: _qcState.qtyData,
-  });
+  await window.LmsSpreadsheet?.flush('quick-calc');
+  await autoSaveQc();
   const btn = document.getElementById('qcSaveBtn');
   if (btn) {
     btn.textContent = '✓ 已保存';
@@ -750,6 +751,7 @@ async function qcToggleViewMode() {
   });
 
   try {
+    await window.LmsSpreadsheet?.flush('quick-calc');
     await autoSaveQc();
     if (_qcState.qcViewMode === 'qty') {
       _qcState.qcViewMode = 'wage';

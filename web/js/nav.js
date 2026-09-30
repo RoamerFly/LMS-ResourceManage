@@ -88,9 +88,23 @@ function goBack() {
 // ============================================================
 // 导航
 // ============================================================
-function _doNavigateTo(view) {
-  if (_currentView === 'work' && view !== 'work') autoSaveWorkRecords();
-  if (_currentView === 'quickcalc' && view !== 'quickcalc') autoSaveQc();
+async function saveLeavingSpreadsheet(view) {
+  if (_currentView === 'work' && view !== 'work') {
+    await window.LmsSpreadsheet?.flush('work-edit');
+    clearTimeout(window._weAutoSaveTimer);
+    await autoSaveWorkRecords();
+    window.LmsSpreadsheet?.dispose(document.getElementById('spreadsheetWrap'));
+  }
+  if (_currentView === 'quickcalc' && view !== 'quickcalc') {
+    await window.LmsSpreadsheet?.flush('quick-calc');
+    clearTimeout(window._qcAutoSaveTimer);
+    await autoSaveQc();
+    window.LmsSpreadsheet?.dispose(document.getElementById('qcDeptTablesWrap'));
+  }
+}
+
+async function _doNavigateTo(view) {
+  await saveLeavingSpreadsheet(view);
 
   _currentView = view;
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -171,6 +185,7 @@ function closeModalOnOverlay(e) {
 // 成员详情页
 // ============================================================
 async function _doNavigateToMemberDetail(empId) {
+  await saveLeavingSpreadsheet('member-detail');
   _currentView = 'member-detail';
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));

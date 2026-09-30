@@ -13,6 +13,7 @@ let _weMaxLineId = 0; // 当前年月最大 lineId（新增行从这里递增）
 let _workViewModeBusy = false;
 let workColumnDraggingEmpId = 0;
 let workColumnDraggingDeptId = 0;
+let _workSaveQueue = Promise.resolve();
 
 // ─────────────────────────────────────────────────────────
 // loadWorkRecords：每条 DB 记录独立一行，不合并
@@ -52,6 +53,11 @@ function ensureWorkSaveButton() {
 }
 
 async function loadWorkRecords() {
+  if (window.LmsSpreadsheet?.getInstance('spreadsheetWrap')) {
+    await window.LmsSpreadsheet.flush('work-edit');
+    clearTimeout(window._weAutoSaveTimer);
+    await autoSaveWorkRecords();
+  }
   ensureWorkSaveButton();
   const year = parseInt(document.getElementById("workYear").value);
   const month = parseInt(document.getElementById("workMonth").value);
@@ -198,18 +204,16 @@ function renderSpreadsheet() {
   }
 
   function buildGroupTable(groupIdx, groupEmps, isOnlyGroup) {
-    const actionColStyle = "left:0;min-width:58px;width:58px;";
-    const orderColStyle = "left:58px;min-width:150px;width:150px;";
-    const modelColStyle = "left:208px;min-width:120px;width:120px;";
+    const orderColStyle = "left:0;min-width:150px;width:150px;";
+    const modelColStyle = "left:150px;min-width:120px;width:120px;";
 
     const headerHtml = `<thead>
     <tr class="work-dept-hint-row">
-      <th class="work-dept-hint-fixed-left" colspan="3">成员所属部门</th>
+      <th class="work-dept-hint-fixed-left" colspan="2">成员所属部门</th>
       ${buildDeptHintCells(groupEmps)}
       <th class="work-dept-hint-summary">汇总</th>
     </tr>
     <tr class="work-member-header-row">
-      <th class="col-fixed work-sticky-action" style="${actionColStyle}background:var(--work-header-bg);color:var(--work-header-text);z-index:24;">操作</th>
       <th class="col-fixed work-sticky-order" style="${orderColStyle}background:var(--work-header-bg);color:var(--work-header-text);z-index:23;">订单号</th>
       <th class="col-fixed work-sticky-model" style="${modelColStyle}background:var(--work-header-bg);color:var(--work-header-text);z-index:22;">型号</th>
       ${groupEmps
@@ -280,11 +284,6 @@ function renderSpreadsheet() {
       const compact = String(totalDisplay).length > 8 ? " compact" : "";
 
       tbodyHtml += `<tr data-row-key="${escHtml(mapKey)}">
-        <td class="col-fixed work-sticky-action" style="${actionColStyle}text-align:center;z-index:9;">
-          <button class="btn btn-sm"
-            style="padding:4px 10px;font-size:var(--font-size-11);background:var(--work-delete-bg);color:var(--work-delete-text);"
-            onclick="deleteWorkRow('${mapKey}')">删除</button>
-        </td>
         <td class="col-fixed work-sticky-order" style="${orderColStyle}background:var(--work-select-bg);z-index:8;">
           <button type="button" class="cell-input work-choice-button"
             style="background:var(--work-select-bg);color:var(--work-select-text);font-weight:600;min-width:120px;"
@@ -858,6 +857,7 @@ function updateRowTotal(rowId) {
 // calcCellWage：工资计算
 // ─────────────────────────────────────────────────────────
 async function saveWorkRecords() {
+  await window.LmsSpreadsheet?.flush('work-edit');
   await autoSaveWorkRecords();
   const btn = document.getElementById("workSaveBtn");
   if (btn) {
@@ -908,6 +908,7 @@ async function toggleViewMode() {
 
   try {
     if (_state.viewMode === "qty") {
+      await window.LmsSpreadsheet?.flush('work-edit');
       await autoSaveWorkRecords();
       _state.wageDetail = await get(
         `/api/wage-detail?year=${year}&month=${month}`,
@@ -961,6 +962,13 @@ async function autoSaveWorkRecords() {
   const year = _state.currentYear;
   const month = _state.currentMonth;
   if (!year || !month) return;
+  const rows = JSON.parse(JSON.stringify(_weRowMap));
+  const saved = _workSaveQueue.catch(() => {}).then(() => persistWorkRecords(year, month, rows));
+  _workSaveQueue = saved;
+  return saved;
+}
+
+async function persistWorkRecords(year, month, rows) {
 
   // 先获取当前数据库中的所有记录
   let dbRecords = [];
@@ -973,7 +981,7 @@ async function autoSaveWorkRecords() {
 
   // 构建当前 _weRowMap 中的所有行标识
   const currentRowKeys = new Set();
-  for (const [rowKey, rowData] of Object.entries(_weRowMap)) {
+  for (const [rowKey, rowData] of Object.entries(rows)) {
     const { orderId, modelId, lineId } = rowData;
     if (lineId > 0) {
       currentRowKeys.add(`${orderId},${modelId},${lineId}`);
@@ -995,7 +1003,7 @@ async function autoSaveWorkRecords() {
   }
 
   // 保存当前 _weRowMap 中的所有记录
-  for (const [rowKey, rowData] of Object.entries(_weRowMap)) {
+  for (const [rowKey, rowData] of Object.entries(rows)) {
     const { orderId, modelId, lineId, emps } = rowData;
     // 订单未选：跳过；型号未选(modelId=0)：正常保存（允许未知型号）
 
@@ -1053,14 +1061,8 @@ async function clearAllWorkQty() {
 // 年月切换
 // ─────────────────────────────────────────────────────────
 document.getElementById("workYear").addEventListener("change", () => {
-  _weRowMap = {};
-  _weRowCounter = 0;
-  _weMaxLineId = 0;
   loadWorkRecords();
 });
 document.getElementById("workMonth").addEventListener("change", () => {
-  _weRowMap = {};
-  _weRowCounter = 0;
-  _weMaxLineId = 0;
   loadWorkRecords();
 });

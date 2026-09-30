@@ -85,7 +85,7 @@ def get_window_settings():
         "width": 1400,
         "height": 900,
         "fullscreen": False,
-        "maximized": False
+        "maximized": True
     }
 
 
@@ -137,7 +137,7 @@ if __name__ == "__main__":
     
     # 全屏模式和最大化窗口互斥
     is_fullscreen = win_settings.get('fullscreen', False)
-    is_maximized = win_settings.get('maximized', False)
+    is_maximized = win_settings.get('maximized', True)
     
     # 如果两者都为 True，优先使用全屏模式（避免冲突）
     if is_fullscreen and is_maximized:
@@ -171,6 +171,7 @@ if __name__ == "__main__":
             x=x,
             y=y,
             fullscreen=is_fullscreen,
+            maximized=is_maximized,
             min_size=(1000, 680),
             resizable=True,
         )
@@ -238,6 +239,7 @@ if __name__ == "__main__":
             x=x,
             y=y,
             fullscreen=is_fullscreen,
+            maximized=is_maximized,
             min_size=(1000, 680),
             resizable=True,
         )

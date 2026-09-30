@@ -13,14 +13,41 @@ async function main() {
   const profile = await fs.mkdtemp(path.join(tempRoot, 'lms-sheet-native-'));
   const edge = process.env.EDGE_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
   const engineTest = process.argv.includes('--engine');
-  const url = pathToFileURL(path.join(__dirname, engineTest ? 'spreadsheet-engine.html' : 'spreadsheet-selection.html')).href + '?manual=1';
-  const browser = spawn(edge, ['--headless=new', '--disable-gpu', '--no-first-run',
-    `--user-data-dir=${profile}`, '--remote-debugging-port=0', url], { windowsHide: true, stdio: 'ignore' });
+  const liveTest = process.argv.includes('--live');
+  let url = pathToFileURL(path.join(__dirname, engineTest ? 'spreadsheet-engine.html' : 'spreadsheet-selection.html')).href + '?manual=1';
+  let browser, backend, stopBackend;
   let launchError;
-  browser.on('error', error => { launchError = error; });
   let socket;
   let call;
   try {
+    const startBackend = async apiPort => {
+      const python = process.env.TEST_PYTHON || path.join(__dirname, '..', 'venv', 'Scripts', 'python.exe');
+      backend = spawn(python, [path.join(__dirname, 'spreadsheet-test-server.py'), profile, ...(apiPort ? [String(apiPort)] : [])], {windowsHide:true, stdio:['ignore','ignore','pipe']});
+      let errorOutput = '';
+      backend.stderr.on('data', data => {errorOutput += data.toString();});
+      backend.on('error', error => {launchError=error;});
+      for (let i=0;i<100;i++) {
+        if (launchError) throw launchError;
+        if (backend.exitCode !== null) throw new Error(errorOutput);
+        try {
+          const port = await fs.readFile(path.join(profile,'api-port.txt'),'utf8');
+          const base = `http://127.0.0.1:${port}/`;
+          if ((await fetch(base)).ok) return base;
+        } catch {}
+        await delay(100);
+      }
+      throw new Error(`测试 API 启动失败：${errorOutput}`);
+    };
+    stopBackend = async () => {
+      if (!backend || backend.exitCode !== null) return;
+      const exited = new Promise(resolve => backend.once('exit',resolve));
+      backend.kill();
+      await exited;
+    };
+    if (liveTest) url = await startBackend();
+    browser = spawn(edge, ['--headless=new', '--disable-gpu', '--no-first-run',
+      `--user-data-dir=${profile}`, '--remote-debugging-port=0', url], { windowsHide: true, stdio: 'ignore' });
+    browser.on('error', error => { launchError = error; });
     let port;
     for (let i = 0; i < 100; i++) {
       if (launchError) throw launchError;
@@ -29,7 +56,7 @@ async function main() {
     }
     assert.ok(port, 'Edge 调试端口启动');
     const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
-    const target = targets.find(item => item.type === 'page' && item.url.includes(engineTest ? 'spreadsheet-engine.html' : 'spreadsheet-selection.html'));
+    const target = targets.find(item => item.type === 'page' && (liveTest ? item.url.startsWith(url) : item.url.includes(engineTest ? 'spreadsheet-engine.html' : 'spreadsheet-selection.html')));
     assert.ok(target, '找到测试页面');
     socket = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => {
@@ -91,6 +118,15 @@ async function main() {
       await call('Input.dispatchKeyEvent', { type: 'keyUp', key: name, windowsVirtualKeyCode: code, modifiers });
     };
     const noNativeSelection = async label => assert.equal(await evaluate('getSelection().toString()'), '', label);
+    if (liveTest) {
+      const restartBackend = async () => {
+        const apiPort = new URL(url).port;
+        await stopBackend();
+        await startBackend(apiPort);
+      };
+      await require('./spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
+      return;
+    }
     if (engineTest) {
       await require('./spreadsheet-engine-cases.cjs')({ evaluate, call, click, drag, key, mouse, delay });
       return;
@@ -134,7 +170,8 @@ async function main() {
       await call('Browser.close').catch(() => {});
       socket.close();
     }
-    if (browser.exitCode === null && !launchError) {
+    if (stopBackend) await stopBackend();
+    if (browser && browser.exitCode === null && !launchError) {
       await Promise.race([new Promise(resolve => browser.once('exit', resolve)), delay(2000)]);
       if (browser.exitCode === null) browser.kill();
     }

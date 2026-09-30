@@ -1,0 +1,125 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+
+module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) => {
+  await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+  const waitFor = async expression => {
+    for (let i=0;i<100;i++) {
+      if (await evaluate(expression)) return;
+      await delay(100);
+    }
+    throw new Error(`页面未就绪：${expression}`);
+  };
+  const ready = wrap => waitFor(`window.LmsSpreadsheet?.getInstance('${wrap}')?.ready === true`);
+  const cell = (wrap,r,c) => evaluate(`Number(LmsSpreadsheet.getInstance('${wrap}').book.getActiveSheet().getRange(${r},${c}).getValue())`);
+  const select = async (wrap,r,c,count=1) => {
+    const at = await evaluate(`(() => {const rect=LmsSpreadsheet.getInstance('${wrap}').book.getActiveSheet().getRange(${r},${c}).getCellRect();const canvas=Array.from(document.querySelectorAll('#${wrap} canvas'),el=>el.getBoundingClientRect()).sort((a,b)=>b.width*b.height-a.width*a.height)[0];return {x:canvas.x+rect.x+rect.width/2,y:canvas.y+rect.y+rect.height/2};})()`);
+    for (let n=1;n<=count;n++) {
+      await mouse('mousePressed',at,{button:'left',buttons:1,clickCount:n});
+      await mouse('mouseReleased',at,{button:'left',buttons:0,clickCount:n});
+    }
+    await delay(80);
+  };
+  const type = async text => {
+    for (const ch of text) {
+      await call('Input.dispatchKeyEvent',{type:'keyDown',key:ch,windowsVirtualKeyCode:ch==='.'?190:ch.charCodeAt(0),text:ch});
+      await call('Input.dispatchKeyEvent',{type:'keyUp',key:ch,windowsVirtualKeyCode:ch==='.'?190:ch.charCodeAt(0)});
+    }
+  };
+  const savedWork = () => evaluate(`get('/api/work-records?year=2026&month=9').then(data=>data.records.find(row=>row.emp_id===1&&row.order_id===1&&row.model_id===1)?.quantity)`);
+  const savedQc = month => evaluate(`get('/api/quick-calc-save?year=2026&month=${month}')`);
+  const noActionsInCells = wrap => evaluate(`(() => {const sheets=LmsSpreadsheet.getInstance('${wrap}').book.save().sheets;return Object.values(sheets).every(sheet=>Object.values(sheet.cellData).every(row=>Object.values(row).every(cell=>!['删除','操作'].includes(cell.v))));})()`);
+
+  await waitFor(`document.getElementById('loadingOverlay')?.style.display === 'none'`);
+  assert.equal(await evaluate(`_currentSettings['sidebar-width']`),'auto','旧默认侧栏迁移为适应文字');
+  const width = await evaluate(`document.querySelector('.sidebar').getBoundingClientRect().width`);
+  assert.ok(width>100 && width<180,`紧凑导航宽度 ${width}px`);
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('.sidebar .nav-item,.sidebar-logo'),el=>el.scrollWidth<=el.clientWidth).every(Boolean)`),true,'导航和标题完整显示');
+  assert.equal(await evaluate(`get('/api/window/settings').then(result=>result.config.maximized)`),true,'API默认最大化');
+  await evaluate(`applySetting('fontSize-base','20',true)`);
+  await delay(250);
+  assert.ok(await evaluate(`document.querySelector('.sidebar').getBoundingClientRect().width`) > width,'字体放大后侧栏自适应');
+  await evaluate(`applySetting('fontSize-base','13',true)`);
+  await delay(250);
+
+  await click('.nav-item[data-view="work"]');
+  await ready('spreadsheetWrap');
+  await delay(400);
+  assert.equal(await noActionsInCells('spreadsheetWrap'),true,'做货格子没有操作列');
+  assert.ok(await evaluate(`document.querySelector('#spreadsheetWrap .lms-sheet-actions').textContent.includes('删除选中行')`),'删除留在工具栏');
+  await select('spreadsheetWrap',2,2);
+  await type('123');
+  await key('Enter',13);
+  await delay(150);
+  assert.equal(await cell('spreadsheetWrap',2,2),123,'直接键入多位数字持续可见');
+  await click('#workSaveBtn');
+  await waitFor(`document.getElementById('workSaveBtn').textContent.includes('已保存')`);
+  assert.equal(await savedWork(),123,'做货实际数据库保存');
+
+  await select('spreadsheetWrap',2,2,2);
+  await key('a',65,2);
+  await type('456');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('spreadsheetWrap').book.isCellEditing()`),true,'双击编辑状态');
+  await click('#workSaveBtn');
+  await waitFor(`!LmsSpreadsheet.getInstance('spreadsheetWrap').book.isCellEditing()`);
+  await waitFor(`get('/api/work-records?year=2026&month=9').then(data=>data.records.some(row=>row.emp_id===1&&row.quantity===456))`);
+  assert.equal(await cell('spreadsheetWrap',2,2),456,'未按Enter直接点保存也显示新值');
+  await evaluate('loadWorkRecords()');
+  await delay(150);
+  assert.equal(await cell('spreadsheetWrap',2,2),456,'刷新从SQLite恢复');
+  await select('spreadsheetWrap',2,2);
+  await type('789');
+  await click('.nav-item[data-view="quickcalc"]');
+  await ready('qcDeptTablesWrap');
+  await delay(400);
+  assert.equal(await savedWork(),789,'编辑中切换页面先保存');
+  assert.equal(await noActionsInCells('qcDeptTablesWrap'),true,'快捷计算格子没有操作列');
+  const priceCol = await evaluate(`Array.from(Array.from(LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.values())[0].cells.values()).find(cell=>cell.isPrice && cell.input.dataset.subId==='1').col`);
+  const qtyCol = await evaluate(`Array.from(Array.from(LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.values())[0].cells.values()).find(cell=>cell.input?.classList.contains('qc-qty-input') && cell.input.dataset.key==='1_0,1').col`);
+
+  await select('qcDeptTablesWrap',1,priceCol);
+  await type('2.75');
+  await key('Tab',9);
+  await delay(100);
+  assert.equal(await cell('qcDeptTablesWrap',1,priceCol),2.75,'单价小数可见');
+  await select('qcDeptTablesWrap',1,qtyCol);
+  await type('42');
+  await click('#qcSaveBtn');
+  await waitFor(`get('/api/quick-calc-save?year=2026&month=9').then(data=>data.qty_data?.['1_0,1']===42)`);
+  assert.equal((await savedQc(9)).dept_rows['1_0'][1],2.75,'单价写入实际数据库');
+  assert.equal(await cell('qcDeptTablesWrap',1,qtyCol),42,'编辑中直接保存对数');
+  await select('qcDeptTablesWrap',1,qtyCol);
+  await type('88');
+  await evaluate(`document.getElementById('qcMonth').value='10'; document.getElementById('qcMonth').dispatchEvent(new Event('change'));`);
+  await waitFor(`_qcLoadedPeriod?.month===10`);
+  await delay(250);
+  assert.equal((await savedQc(9)).qty_data['1_0,1'],88,'切月前数据保存到原月份');
+  assert.equal(await cell('qcDeptTablesWrap',1,qtyCol),0,'新月份没有带入旧数据');
+  assert.equal(Object.keys((await savedQc(10))?.qty_data||{}).length,0,'新月份数据库未被旧数据污染');
+
+  await restartBackend();
+  await call('Page.reload');
+  await waitFor(`document.getElementById('loadingOverlay')?.style.display === 'none'`);
+  await click('.nav-item[data-view="work"]');
+  await ready('spreadsheetWrap');
+  await delay(350);
+  assert.equal(await cell('spreadsheetWrap',2,2),789,'重启服务及页面后做货数据恢复');
+  await select('spreadsheetWrap',2,2);
+  await type('321');
+  await key('ArrowRight',39);
+  await delay(150);
+  assert.equal(await cell('spreadsheetWrap',2,2),321,'编辑中方向键提交数值');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet().getSelection().getActiveRange().getA1Notation()`),'D3','方向键移动到右侧格子');
+  const shot = await call('Page.captureScreenshot',{format:'png'});
+  const screenshot = path.join(os.tmpdir(),'lms-spreadsheet-save-layout.png');
+  await fs.writeFile(screenshot,Buffer.from(shot.data,'base64'));
+  console.log(`SCREENSHOT: ${screenshot}`);
+  await click('.nav-item[data-view="quickcalc"]');
+  await ready('qcDeptTablesWrap');
+  await delay(350);
+  assert.equal(await cell('qcDeptTablesWrap',1,priceCol),2.75,'重启后恢复快捷计算单价');
+  assert.equal(await cell('qcDeptTablesWrap',1,qtyCol),88,'重启后恢复快捷计算对数');
+  console.log(`PASS: 实际页面键盘/双击输入、保存/刷新/切页/切月、SQLite重启恢复、无删除列、侧栏${width}px及默认最大化`);
+};

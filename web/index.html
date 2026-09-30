@@ -553,11 +553,12 @@
               布局设置
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">侧边栏宽度</div><div class="settings-row-desc">左侧导航栏宽度</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">侧边栏宽度</div><div class="settings-row-desc">默认自动适应导航文字，也可手动调整</div></div>
               <div class="settings-row-control">
                 <div class="slider-control">
                   <input type="range" class="slider-input" id="s-sidebar-width" min="120" max="600" value="220" oninput="updateSliderVal('sidebar-width', this.value); applySetting('sidebar-width', this.value)">
-                  <span class="slider-value" id="s-sidebar-width-val" ondblclick="editSliderVal('sidebar-width', this)" title="双击输入自定义值">220px</span>
+                  <span class="slider-value" id="s-sidebar-width-val" ondblclick="editSliderVal('sidebar-width', this)" title="双击输入自定义值">适应文字</span>
+                  <button class="btn btn-secondary btn-sm" onclick="applySetting('sidebar-width', 'auto')">适应文字</button>
                 </div>
               </div>
             </div>

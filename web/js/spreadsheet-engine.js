@@ -69,7 +69,7 @@
         cellData[r][c] = { v: value, t: typeof value === 'number' ? 2 : 1, s: style };
         cells.set(`${r},${c}`, { td, input, row: r, col: c, isPrice: input?.classList.contains('qc-price-input') });
         if (td.colSpan > 1) mergeData.push({ startRow: r, endRow: r, startColumn: c, endColumn: c + td.colSpan - 1 });
-        if (r === headerRows - 1) columnData[c] = { w: type === 'work-edit' && c === 1 ? 155 : type === 'work-edit' && c === 2 ? 120 : 92 };
+        if (r === headerRows - 1) columnData[c] = { w: type === 'work-edit' && c === 0 ? 155 : type === 'work-edit' && c === 1 ? 120 : 92 };
         c += td.colSpan;
       }
       columnCount = Math.max(columnCount, c);
@@ -84,7 +84,7 @@
       rowCount: Math.max(table.rows.length + 20, 50), columnCount: Math.max(columnCount + 3, 12),
       defaultColumnWidth: 92, defaultRowHeight: 32,
       rowHeader: { width: 42 }, columnHeader: { height: 25 },
-      freeze: { startRow: headerRows, startColumn: type === 'work-edit' ? 3 : 1, ySplit: headerRows, xSplit: type === 'work-edit' ? 3 : 1 },
+      freeze: { startRow: headerRows, startColumn: type === 'work-edit' ? 2 : 0, ySplit: headerRows, xSplit: type === 'work-edit' ? 2 : 0 },
     };
     const fingerprint = JSON.stringify(Array.from(cells.values(), cell => [cell.row, cell.col,
       cell.td.closest('tr').dataset.rowKey || cell.row, cell.input?.dataset.emp || cell.input?.dataset.key || cell.input?.dataset.subId ||
@@ -107,7 +107,6 @@
     instance.saveLayout?.();
     clearTimeout(instance.layoutTimer);
     instance.disposables.forEach(item => item.dispose());
-    // 保留渲染引擎，只更换工作簿，避免撤销或添加行时重新启动整个 UI。
     instance.api.disposeUnit(instance.book.getId());
     reusable.set(wrap, instance);
     instances.delete(wrap);
@@ -123,6 +122,8 @@
 
   function mount(wrap, type) {
     if (!wrap || !window.LmsSheetEngine) return;
+    // 两个业务页面只允许一个活动工作簿，避免隐藏表格抢占键盘和编辑器焦点。
+    for (const otherWrap of instances.keys()) if (otherWrap !== wrap) dispose(otherWrap);
     const tables = Array.from(wrap.querySelectorAll('table.spreadsheet'));
     if (!tables.length) return;
     const sheets = tables.map((table, index) => makeSheet(table, index, type));
@@ -168,7 +169,8 @@
     const engine = previous ? { univer: previous.univer, univerAPI: previous.api } : createUniver({ locale: LocaleType.ZH_CN,
       locales: { [LocaleType.ZH_CN]: zhCN },
       presets: [UniverSheetsCorePreset({ container: host, header: true, toolbar: true, ribbonType: 'simple',
-        contextMenu: true, disableAutoFocus: true, menu,
+        // 必须允许自动聚焦：键入字符时引擎才能从临时文档进入单元格编辑。
+        contextMenu: true, menu,
         footer: { sheetBar: true, statisticBar: true, zoomSlider: true, menus: false, addSheetButtonConfig: { show: false } },
         sheets: { protectedRangeShadow: false, clipboardConfig: { hidePasteOptions: true } },
       })],
@@ -222,7 +224,7 @@
         if (cell.input) continue;
         const value = textValue(cell.td);
         const actual = book.getSheetBySheetId(meta.id).getRange(cell.row, cell.col).getValue();
-        if (value === actual) continue;
+        if (String(value) === String(actual)) continue;
         (cellValue[cell.row] ||= {})[cell.col] = { v: value, t: typeof value === 'number' ? 2 : 1 };
       }
       if (!Object.keys(cellValue).length) return;
@@ -385,7 +387,12 @@
     instance.ready = true;
   }
 
-  window.LmsSpreadsheet = { mount, dispose, capture, loadLayout,
+  async function flush(type) {
+    const instance = [...instances.values()].find(item => item.type === type);
+    if (instance?.book.isCellEditing()) await instance.book.endEditingAsync(true);
+  }
+
+  window.LmsSpreadsheet = { mount, dispose, capture, loadLayout, flush,
     prepareRestore(type, snapshot) { if (snapshot) pendingRestore.set(type, snapshot); },
     getInstance(wrapId) { return instances.get(document.getElementById(wrapId)); },
     focusInput(input) {

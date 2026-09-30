@@ -16,13 +16,13 @@ const DEFAULT_SETTINGS = {
   bg: '#f1f5f9',
   'card-bg': '#ffffff',
   text: '#1e293b',
-  'sidebar-width': '220',
+  'sidebar-width': 'auto',
   'content-padding': '18',
   'window-width': '1400',
   'window-height': '900',
   'window-resolution': '1400x900',
   'window-fullscreen': false,
-  'window-maximized': false
+  'window-maximized': true
 };
 
 const LEGACY_FONT_SETTING_KEYS = [
@@ -157,6 +157,8 @@ let _systemThemeWatcherBound = false;
 
 function normalizeSettings(settings) {
   const normalized = { ...settings };
+  // 升级旧版默认的 220px 留白为自动适应文字；仍支持手动调整。
+  if (!normalized['sidebar-width'] || String(normalized['sidebar-width']) === '220') normalized['sidebar-width'] = 'auto';
   LEGACY_FONT_SETTING_KEYS.forEach(key => delete normalized[key]);
   if (!normalized['fontSize-base']) {
     normalized['fontSize-base'] = DEFAULT_SETTINGS['fontSize-base'];
@@ -274,7 +276,7 @@ function applySetting(key, value, skipSave = false) {
       root.style.setProperty('--' + key, value);
       break;
     case 'sidebar-width':
-      root.style.setProperty('--sidebar-width', value + 'px');
+      root.style.setProperty('--sidebar-width', value === 'auto' ? 'max-content' : value + 'px');
       break;
     case 'content-padding':
       root.style.setProperty('--content-padding', value + 'px');
@@ -352,7 +354,7 @@ function updateControlDisplay(key, value) {
   } else if (el.tagName === 'SELECT') {
     el.value = value;
   } else if (el.type === 'range') {
-    el.value = value;
+    el.value = value === 'auto' ? el.min : value;
     updateSliderVal(key, value);
   } else if (el.type === 'color') {
     el.value = value;
@@ -362,7 +364,7 @@ function updateControlDisplay(key, value) {
 
 function updateSliderVal(key, value) {
   const valEl = document.getElementById('s-' + key + '-val');
-  if (valEl) valEl.textContent = value + 'px';
+  if (valEl) valEl.textContent = value === 'auto' ? '适应文字' : value + 'px';
 }
 
 // 双击滑块数值输入自定义值
@@ -751,7 +753,7 @@ async function loadWindowSettingsFromFile() {
       
       // 更新全屏和最大化开关（互斥：只有一个能为 true）
       const fullscreen = settings.fullscreen || false;
-      const maximized = settings.maximized || false;
+      const maximized = settings.maximized ?? true;
       
       _currentSettings['window-fullscreen'] = fullscreen;
       _currentSettings['window-maximized'] = maximized;
