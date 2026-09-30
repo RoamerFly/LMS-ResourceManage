@@ -722,8 +722,7 @@
 
     <!-- ===== 快捷计算 ===== -->
     <div class="view" id="view-quickcalc">
-      <div style="display:inline-block;text-align:center;padding:10px 0 2px 0;"><button class="btn btn-back-home" onclick="navigateTo('overview')">🏠 返回主页</button></div>
-      <div class="card">
+      <div class="card qc-card">
         <div class="card-title">
           <div class="work-toolbar">
             <div class="month-picker">
@@ -739,17 +738,14 @@
             <div style="display:flex;gap:6px;align-items:center;">
               <button class="btn btn-sm" id="qcViewModeBtn" onclick="qcToggleViewMode()" style="background:#fef3c7;color:#92400e;">切换工资视角</button>
             </div>
+            <span id="qcSelectionActions" hidden></span>
+            <div class="qc-grand-total"><span>合计</span> <span id="qcGrandTotal">¥0.00</span></div>
           </div>
         </div>
 
         <!-- 按大部门分组的多表格 -->
         <div id="qcDeptTablesWrap"></div>
 
-        <!-- 全厂合计 -->
-        <div style="padding:10px 14px;background:#0f172a;color:#fbbf24;font-weight:700;font-size:var(--font-size-14);border-radius:0 0 var(--radius) var(--radius);display:flex;justify-content:space-between;">
-          <span>💰 全厂合计</span>
-          <span id="qcGrandTotal">¥0.00</span>
-        </div>
       </div>
     </div>
 

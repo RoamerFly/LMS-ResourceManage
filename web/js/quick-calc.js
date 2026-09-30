@@ -7,6 +7,23 @@ let qcColumnDraggingDeptId = 0;
 let _qcLoadedPeriod = null;
 let _qcSaveQueue = Promise.resolve();
 
+// 空白行只属于电子表格视图；数据库仅保存有单价或对数的在用行。
+function isQcRowUsed(rowKey) {
+  return Object.values(_qcDeptRows[rowKey] || {}).some(value => Number(value) > 0) ||
+    Object.entries(_qcState.qtyData).some(([key, value]) => key.startsWith(rowKey + ',') && Number(value) > 0);
+}
+
+function normalizeQcRows() {
+  for (const [key, value] of Object.entries(_qcState.qtyData)) {
+    if (Number(value) > 0) _qcDeptRows[key.split(',')[0]] ||= {};
+    else delete _qcState.qtyData[key];
+  }
+  for (const [rowKey, row] of Object.entries(_qcDeptRows)) {
+    for (const [subId, price] of Object.entries(row)) if (!(Number(price) > 0)) delete row[subId];
+    if (!isQcRowUsed(rowKey)) delete _qcDeptRows[rowKey];
+  }
+}
+
 // ---- 初始化 ----
 async function initQuickCalc() {
   if (window.LmsSpreadsheet?.getInstance('qcDeptTablesWrap')) {
@@ -37,20 +54,11 @@ async function initQuickCalc() {
     _qcDeptRows = { ...saved.dept_rows };
     _qcState.qtyData = { ...saved.qty_data };
   } else {
-    // 默认初始状态：每个大部门初始化一行空行
+    // 新月份从空白表格开始，首次录入时自动启用对应行。
     _qcDeptRows = {};
     _qcState.qtyData = {};
-    for (const dept of _qcState.departments) {
-      const rowKey = `${dept.id}_0`;
-      const row = {};
-      // 该大部门下的所有小部门，单价初始化为0
-      const deptSubs = _qcState.subDepartments.filter(s => s.dept_id === dept.id);
-      for (const sub of deptSubs) {
-        row[sub.id] = 0;
-      }
-      _qcDeptRows[rowKey] = row;
-    }
   }
+  normalizeQcRows();
 
   // 重置工资视角按钮
   const btn = document.getElementById('qcViewModeBtn');
@@ -77,6 +85,7 @@ function renderQcDeptTables() {
   const wrap = document.getElementById('qcDeptTablesWrap');
   if (!wrap) return;
   window.LmsSpreadsheet?.dispose(wrap);
+  normalizeQcRows();
 
   const { departments, subDepartments } = _qcState;
   const employees = orderEmployeesByDisplayPreference('quickcalc', _qcState.employees);
@@ -99,6 +108,8 @@ function renderQcDeptTables() {
 
     // 收集该大部门的所有行
     const deptRowKeys = Object.keys(_qcDeptRows).filter(k => k.startsWith(dept.id + '_'));
+    // 至少提供一行 DOM 模板，其余空白行由引擎按需绑定，不生成大量隐藏输入框。
+    if (!deptRowKeys.length) deptRowKeys.push(`${dept.id}_0`);
     const sortedRowKeys = deptRowKeys.sort((a, b) => {
       const ra = parseInt(a.split('_')[1]);
       const rb = parseInt(b.split('_')[1]);
@@ -113,13 +124,11 @@ function renderQcDeptTables() {
       <span class="qc-dept-emps">成员：${deptEmps.map(e => escHtml(e.name)).join('、')}</span>
     </div>`;
 
-    if (sortedRowKeys.length === 0) {
-      html += `<div style="padding:16px;color:var(--text-muted);font-size:var(--font-size-12);text-align:center;">暂无行数据，请点击下方按钮添加</div>`;
-    } else {
+    {
       const zebraCls = (typeof _currentSettings !== 'undefined' && _currentSettings['table-zebra']) ? ' table-zebra' : '';
-      html += `<div class="spreadsheet-wrap qc-dept-table-wrap"><table class="spreadsheet${isWage ? ' wage-view' : ''}${zebraCls}">`;
+      html += `<div class="spreadsheet-wrap qc-dept-table-wrap"><table data-dept-id="${dept.id}" class="spreadsheet${isWage ? ' wage-view' : ''}${zebraCls}">`;
 
-      // 表头仅包含业务数据；删除操作放在表格上方工具栏。
+      // 表头仅包含业务数据。
       html += '<thead><tr>';
       for (const sub of deptSubs) {
         html += `<th style="min-width:70px;width:70px;background:#d1fae5;color:#065f46;position:sticky;top:0;z-index:10;text-align:center;">
@@ -142,8 +151,7 @@ function renderQcDeptTables() {
       // 表体
       html += '<tbody>';
       for (const rowKey of sortedRowKeys) {
-        const row = _qcDeptRows[rowKey];
-        const rowIdx = rowKey.split('_')[1];
+        const row = _qcDeptRows[rowKey] || {};
 
         // 计算行合计：对数视角合计对数，工资视角合计金额。
         let rowTotal = 0;
@@ -157,7 +165,7 @@ function renderQcDeptTables() {
         const rowDisplay = isWage ? (rowTotal > 0 ? fmtCompact(rowTotal) : '') : rowTotal;
         const rowCompact = String(rowDisplay).length > 8 ? ' compact' : '';
 
-        html += `<tr data-row-key="${escHtml(rowKey)}">`;
+        html += `<tr data-row-key="${escHtml(rowKey)}" data-qc-used="${isQcRowUsed(rowKey)}">`;
 
 
         // 各小部门单价列（纯手动输入）
@@ -224,13 +232,11 @@ function renderQcDeptTables() {
       html += '</tbody></table></div>';
     }
 
-    // 添加行按钮
-    html += `<button class="row-add-btn" onclick="addQcDeptRow(${dept.id})">+ 添加一行</button>`;
     html += '</div>'; // qc-dept-section end
 
     // 累加该大部门的合计
     for (const rowKey of sortedRowKeys) {
-      const row = _qcDeptRows[rowKey];
+      const row = _qcDeptRows[rowKey] || {};
       const deptEmps2 = employees.filter(e => e.dept_id === dept.id);
       for (const emp of deptEmps2) {
         const qtyKey = `${rowKey},${emp.id}`;
@@ -383,11 +389,11 @@ function onQcPriceInput(el) {
   const subId = parseInt(el.dataset.subId);
   const val = parseFloat(el.value) || 0;
 
-  if (!_qcDeptRows[rowKey]) return;
+  _qcDeptRows[rowKey] ||= {};
 
   // 实时更新显示，但不保存历史
   if (val === 0) {
-    _qcDeptRows[rowKey][subId] = 0;
+    delete _qcDeptRows[rowKey][subId];
     el.style.background = '';
   } else {
     _qcDeptRows[rowKey][subId] = val;
@@ -490,6 +496,7 @@ function onQcQtyInput(el) {
     el.style.background = '';  // 0值恢复默认颜色
   } else {
     _qcState.qtyData[key] = val;
+    _qcDeptRows[rowKey] ||= {};
     el.style.background = '#bfdbfe';  // 非0值浅蓝色（与做货编辑一致）
   }
 
@@ -560,7 +567,7 @@ function onQcQtyTab(e, el) {
 // ---- 更新某行所有合计（行合计 + 全厂合计） ----
 function updateDeptRowTotals(rowKey) {
   const deptId = parseInt(rowKey.split('_')[0]);
-  const row = _qcDeptRows[rowKey];
+  const row = _qcDeptRows[rowKey] || {};
   const deptEmps = _qcState.employees.filter(e => e.dept_id === deptId);
   const isWage = _qcState.qcViewMode === 'wage';
 
@@ -593,6 +600,7 @@ function updateDeptRowTotals(rowKey) {
     // 直接用行标识匹配，新增行也能稳定更新合计。
     for (const tr of rows) {
       if (tr.dataset.rowKey === rowKey) {
+        tr.dataset.qcUsed = String(isQcRowUsed(rowKey));
         const totalEl = tr.querySelector('.row-total-display');
         if (totalEl) {
           rowTotal = isWage ? roundNumber(rowTotal) : rowTotal;
@@ -623,65 +631,12 @@ function updateDeptRowTotals(rowKey) {
     }
   }
   document.getElementById('qcGrandTotal').textContent = '¥' + fmt(grandTotal);
-}
-
-// ---- 添加行 ----
-function addQcDeptRow(deptId) {
-  pushHistory('quick-calc');
-  const deptRowKeys = Object.keys(_qcDeptRows).filter(k => k.startsWith(deptId + '_'));
-  const maxIdx = deptRowKeys.length > 0
-    ? Math.max(...deptRowKeys.map(k => parseInt(k.split('_')[1])))
-    : -1;
-  const newRowIdx = maxIdx + 1;
-  const rowKey = `${deptId}_${newRowIdx}`;
-
-  const deptSubs = _qcState.subDepartments.filter(s => s.dept_id === deptId);
-  const row = {};
-  for (const sub of deptSubs) {
-    row[sub.id] = 0;
-  }
-  _qcDeptRows[rowKey] = row;
-
-  renderQcDeptTables();
-  autoSaveQc(); // 添加行后自动保存
-}
-
-// ---- 删除行 ----
-function removeQcDeptRow(rowKey) {
-  pushHistory('quick-calc');
-  const deptId = rowKey.split('_')[0];
-  const deptRowKeys = Object.keys(_qcDeptRows).filter(k => k.startsWith(deptId + '_'));
-
-  if (deptRowKeys.length <= 1) {
-    // 至少保留一行，清空该行数据
-    const row = _qcDeptRows[rowKey];
-    const deptEmps = _qcState.employees.filter(e => e.dept_id === parseInt(deptId));
-    for (const emp of deptEmps) {
-      delete _qcState.qtyData[`${rowKey},${emp.id}`];
-    }
-    const deptSubs = _qcState.subDepartments.filter(s => s.dept_id === parseInt(deptId));
-    for (const sub of deptSubs) {
-      row[sub.id] = 0;
-    }
-    renderQcDeptTables();
-    autoSaveQc(); // 清空行后自动保存
-    return;
-  }
-
-  // 删除该行的对数数据
-  const row = _qcDeptRows[rowKey];
-  for (const emp of _qcState.employees) {
-    delete _qcState.qtyData[`${rowKey},${emp.id}`];
-  }
-
-  delete _qcDeptRows[rowKey];
-
-  renderQcDeptTables();
-  saveQcState();
+  if (!isQcRowUsed(rowKey)) delete _qcDeptRows[rowKey];
 }
 
 // ---- 自动保存快捷计算状态 ----
 async function autoSaveQc() {
+  normalizeQcRows();
   const year = _qcLoadedPeriod?.year ?? parseInt(document.getElementById('qcYear')?.value || _state.currentYear);
   const month = _qcLoadedPeriod?.month ?? parseInt(document.getElementById('qcMonth')?.value || _state.currentMonth);
   const payload = JSON.parse(JSON.stringify({

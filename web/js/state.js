@@ -205,7 +205,8 @@ function ensureMemberOrderSyncSwitch(page, toolbar, onChange) {
     label = document.createElement('label');
     label.className = 'order-sync-toggle';
     label.id = id;
-    label.innerHTML = `<input type="checkbox"><span>显示顺序同步成员管理页</span>`;
+    label.innerHTML = `<input type="checkbox"><span>${page === 'quickcalc' ? '同步成员顺序' : '显示顺序同步成员管理页'}</span>`;
+    label.title = '显示顺序同步成员管理页';
     toolbar.appendChild(label);
   }
 

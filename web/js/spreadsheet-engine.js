@@ -25,14 +25,25 @@
   }
 
   function textValue(cell) {
+    if (cell.closest('tr')?.dataset.qcUsed === 'false') return '';
     if (cell.dataset.sheetValue !== undefined) return Number(cell.dataset.sheetValue);
     const input = cell.querySelector(inputSelector);
-    if (input) return Number(input.value || 0);
+    if (input) return input.classList.contains('qc-price-input') || input.classList.contains('qc-qty-input')
+      ? (input.value === '' ? '' : Number(input.value)) : Number(input.value || 0);
     const display = cell.querySelector('.wage-cell-display, .qc-price-display');
     const member = cell.querySelector('.member-list-name-color');
     if (member) return member.textContent.trim();
     const text = (display?.title || cell.textContent).trim().replace(/[¥￥,]/g, '');
     return text !== '' && Number.isFinite(Number(text)) ? Number(text) : cell.textContent.trim().replace(/\s+/g, ' ');
+  }
+
+  function qcRowStyle(cell, used, style = cell.baseStyle) {
+    const total = cell.td.classList.contains('row-total-display');
+    return { ...style,
+      bg: { rgb: !used ? '#ffffff' : total ? '#fef9c3' : cell.isPrice ? '#f0fdf4' : '#eff6ff' },
+      cl: { rgb: !used ? '#64748b' : total ? '#92400e' : cell.baseStyle.cl.rgb },
+      ...(total ? { bl: used ? 1 : 0 } : {}),
+    };
   }
 
   function makeSheet(table, index, type) {
@@ -44,7 +55,10 @@
     const headerRows = table.tHead?.rows.length || 1;
     const name = type === 'work-edit' ? '做货记录' : table.closest('.qc-dept-section')?.querySelector('.qc-dept-name')?.textContent || `部门${index + 1}`;
     let columnCount = 0;
-    Array.from(table.rows).forEach((tr, r) => {
+    Array.from(table.rows).forEach((tr, tableRow) => {
+      // 行号是数据标识的一部分，空行不能在刷新时被压缩掉。
+      const r = type === 'quick-calc' && tr.dataset.rowKey
+        ? Number(tr.dataset.rowKey.split('_')[1]) + headerRows : tableRow;
       cellData[r] = {};
       if (tr.dataset.rowKey) rows.set(r, tr);
       let c = 0;
@@ -64,32 +78,69 @@
         if (input && Number(input.value) > 0) style.bg = { rgb: contentCss.backgroundColor };
         if (input?.classList.contains('qc-price-input') || td.querySelector('.wage-cell-display, .qc-price-display') || (total && table.classList.contains('wage-view'))) {
           style.n = { pattern: '#,##0.00' };
-        } else if (typeof textValue(td) === 'number') style.n = { pattern: '0' };
+        } else if (input || typeof textValue(td) === 'number') style.n = { pattern: '0' };
         const value = textValue(td);
-        cellData[r][c] = { v: value, t: typeof value === 'number' ? 2 : 1, s: style };
-        cells.set(`${r},${c}`, { td, input, row: r, col: c, isPrice: input?.classList.contains('qc-price-input') });
+        const cell = { td, input, row: r, col: c, isPrice: td.classList.contains('qc-price-cell'), baseStyle: style };
+        cellData[r][c] = { v: value, t: typeof value === 'number' ? 2 : 1,
+          s: type === 'quick-calc' && tr.dataset.rowKey ? qcRowStyle(cell, tr.dataset.qcUsed === 'true') : style };
+        cells.set(`${r},${c}`, cell);
         if (td.colSpan > 1) mergeData.push({ startRow: r, endRow: r, startColumn: c, endColumn: c + td.colSpan - 1 });
         if (r === headerRows - 1) columnData[c] = { w: type === 'work-edit' && c === 0 ? 155 : type === 'work-edit' && c === 1 ? 120 : 92 };
         c += td.colSpan;
       }
       columnCount = Math.max(columnCount, c);
     });
-    const id = type === 'work-edit' ? 'work' : `dept-${rows.values().next().value?.dataset.rowKey.split('_')[0] || index}`;
+    const id = type === 'work-edit' ? 'work' : `dept-${table.dataset.deptId || index}`;
     const columnKeys = Object.fromEntries([...cells.values()].filter(cell => cell.row === headerRows - 1)
       .map(cell => [cell.col, cell.td.dataset.empId ? `emp-${cell.td.dataset.empId}` : textValue(cell.td)]));
     for (const cell of cells.values()) {
       cell.layoutKey = `${cell.td.closest('tr').dataset.rowKey || `header-${cell.row}`}|${columnKeys[cell.col] || cell.col}`;
     }
     const data = { id, name, cellData, mergeData, columnData,
-      rowCount: Math.max(table.rows.length + 20, 50), columnCount: Math.max(columnCount + 3, 12),
+      rowCount: type === 'quick-calc' ? Math.max(200, ...Array.from(rows.keys(), r => r + 101)) : Math.max(table.rows.length + 20, 50),
+      columnCount: Math.max(columnCount + 3, 12),
       defaultColumnWidth: 92, defaultRowHeight: 32,
       rowHeader: { width: 42 }, columnHeader: { height: 25 },
       freeze: { startRow: headerRows, startColumn: type === 'work-edit' ? 2 : 0, ySplit: headerRows, xSplit: type === 'work-edit' ? 2 : 0 },
     };
-    const fingerprint = JSON.stringify(Array.from(cells.values(), cell => [cell.row, cell.col,
+    const fingerprint = type === 'quick-calc' ? JSON.stringify([id, table.classList.contains('wage-view'), columnKeys]) : JSON.stringify(Array.from(cells.values(), cell => [cell.row, cell.col,
       cell.td.closest('tr').dataset.rowKey || cell.row, cell.input?.dataset.emp || cell.input?.dataset.key || cell.input?.dataset.subId ||
       (cell.td.tagName === 'TH' ? cell.td.textContent.trim() : 'readonly')]));
-    return { id, data, cells, rows, headerRows, fingerprint, columnCount, columnKeys };
+    const firstDataRow = rows.keys().next().value;
+    const columnTemplates = new Map([...cells.values()].filter(cell => cell.row === firstDataRow).map(cell => [cell.col, cell]));
+    return { id, data, cells, rows, headerRows, fingerprint, columnCount, columnKeys, columnTemplates, table,
+      rowTemplate: type === 'quick-calc' ? table.tBodies[0]?.rows[0]?.cloneNode(true) : null };
+  }
+
+  function getCell(meta, row, col) {
+    if (!meta) return;
+    row = Number(row); col = Number(col);
+    let cell = meta.cells.get(`${row},${col}`);
+    if (cell || !meta.rowTemplate || !Number.isInteger(row) || !Number.isInteger(col) || row < meta.headerRows || row >= meta.data.rowCount || col < 0 || col >= meta.columnCount) return cell;
+    // 只为真正编辑到的空白行建立业务绑定；无需重建工作簿或移动选区。
+    const tr = meta.rowTemplate.cloneNode(true);
+    const rowKey = `${meta.id.replace('dept-', '')}_${row - meta.headerRows}`;
+    tr.dataset.rowKey = rowKey;
+    tr.dataset.qcUsed = 'false';
+    for (const [c, td] of Array.from(tr.cells).entries()) {
+      const input = td.querySelector(inputSelector);
+      if (input) {
+        input.value = '';
+        input.style.background = '';
+        input.dataset.rowKey = rowKey;
+        if (input.dataset.key) input.dataset.key = `${rowKey},${input.dataset.empId}`;
+      } else {
+        const display = td.querySelector('.wage-cell-display, .qc-price-display');
+        if (display) { display.textContent = ''; display.title = ''; }
+        if (td.classList.contains('row-total-display')) { td.textContent = ''; td.dataset.sheetValue = '0'; }
+      }
+      const templateCell = meta.columnTemplates.get(c);
+      meta.cells.set(`${row},${c}`, { td, input, row, col: c, isPrice: td.classList.contains('qc-price-cell'),
+        baseStyle: templateCell.baseStyle, layoutKey: `${rowKey}|${meta.columnKeys[c] || c}` });
+    }
+    meta.table.tBodies[0].appendChild(tr);
+    meta.rows.set(row, tr);
+    return meta.cells.get(`${row},${col}`);
   }
 
   function current() {
@@ -140,6 +191,9 @@
       if (!layout) continue;
       for (const cell of sheet.cells.values()) {
         if (layout.cellStyles?.[cell.layoutKey]) sheet.data.cellData[cell.row][cell.col].s = layout.cellStyles[cell.layoutKey];
+        if (type === 'quick-calc' && cell.row >= sheet.headerRows) {
+          sheet.data.cellData[cell.row][cell.col].s = qcRowStyle(cell, cell.td.closest('tr').dataset.qcUsed === 'true', sheet.data.cellData[cell.row][cell.col].s);
+        }
       }
       for (const [col, key] of Object.entries(sheet.columnKeys)) {
         if (layout.columns?.[key]) sheet.data.columnData[col] = layout.columns[key];
@@ -152,13 +206,15 @@
     source.className = 'lms-sheet-source';
     while (wrap.firstChild) source.appendChild(wrap.firstChild);
     source.hidden = true;
-    const bar = document.createElement('div');
-    bar.className = 'lms-sheet-actions';
+    const externalBar = type === 'quick-calc' ? document.getElementById('qcSelectionActions') : null;
+    const bar = externalBar || document.createElement('div');
+    bar.className = `lms-sheet-actions${type === 'quick-calc' ? ' qc-selection-actions' : ''}`;
     const previous = reusable.get(wrap);
     reusable.delete(wrap);
     const host = previous?.host || document.createElement('div');
     host.className = 'lms-sheet-host';
-    wrap.append(bar, host, source);
+    if (!externalBar) wrap.appendChild(bar);
+    wrap.append(host, source);
     const { createUniver, LocaleType, UniverSheetsCorePreset, zhCN } = window.LmsSheetEngine;
     const hiddenCommands = ['univer.command.undo', 'univer.command.redo', 'sheet.command.insert-row', 'sheet.command.insert-col', 'sheet.command.remove-row', 'sheet.command.remove-col',
       'sheet.command.insert-sheet', 'sheet.command.delete-sheet', 'sheet.command.set-worksheet-name', 'sheet.command.set-range-merge',
@@ -186,6 +242,7 @@
     // 每次换簿使用不同标识，防止上一轮编辑的异步命令写入新工作簿。
     data = { ...data, id: `lms-${type}-${++workbookSequence}` };
     const book = api.createWorkbook(data);
+    for (const sheet of sheets) sheet.data.rowCount = data.sheets[sheet.id].rowCount;
     const instance = { wrap, type, univer, api, book, sheets: new Map(sheets.map(sheet => [sheet.id, sheet])),
       fingerprints, source, bar, host, syncing: false, historyPending: false, disposables: [] };
     instances.set(wrap, instance);
@@ -232,8 +289,29 @@
       try { api.syncExecuteCommand('sheet.mutation.set-range-values', { unitId: book.getId(), subUnitId: meta.id, cellValue }); }
       finally { instance.syncing = false; }
     };
+    const syncQcRows = (meta, changedRows) => {
+      const sheet = book.getSheetBySheetId(meta.id);
+      const cellValue = {};
+      for (const cell of meta.cells.values()) {
+        if (!changedRows.has(cell.row)) continue;
+        const used = cell.td.closest('tr').dataset.qcUsed === 'true';
+        const range = sheet.getRange(cell.row, cell.col);
+        const style = qcRowStyle(cell, used, { ...cell.baseStyle, ...range.getCellStyleData() });
+        const patch = { s: style };
+        if (!used) Object.assign(patch, { v: null, t: 2, p: null });
+        (cellValue[cell.row] ||= {})[cell.col] = patch;
+      }
+      instance.syncing = true;
+      try {
+        api.syncExecuteCommand('sheet.mutation.set-range-values', { unitId: book.getId(), subUnitId: meta.id, cellValue });
+        if (Math.max(...changedRows) >= meta.data.rowCount - 20) {
+          meta.data.rowCount += 100;
+          sheet.setRowCount(meta.data.rowCount);
+        }
+      } finally { instance.syncing = false; }
+    };
     listen(api.Event.BeforeSheetEditStart, event => {
-      if (!instance.sheets.get(event.worksheet.getSheetId())?.cells.get(`${event.row},${event.column}`)?.input) event.cancel = true;
+      if (!getCell(instance.sheets.get(event.worksheet.getSheetId()), event.row, event.column)?.input) event.cancel = true;
     });
     listen(api.Event.BeforeCommandExecute, event => {
       if (instance.syncing) return;
@@ -256,10 +334,17 @@
         if (!meta) { event.cancel = true; return; }
         for (const [r, columns] of Object.entries(event.params.cellValue || {})) {
           for (const [c, patch] of Object.entries(columns || {})) {
-            const cell = meta.cells.get(`${r},${c}`);
+            const cell = getCell(meta, r, c);
             const writesValue = patch === null || own(patch, 'v') || own(patch, 'f') || own(patch, 'p');
             if (!writesValue) continue;
             if (!cell?.input) {
+              // 允许选中整条快捷计算数据行按 Delete，合计由业务计算更新。
+              // 空白扩展列不保存，表头仍保持只读。
+              if (type === 'quick-calc' && Number(r) >= meta.headerRows &&
+                (patch === null || (patch.v == null && !patch.f && !patch.p))) {
+                delete columns[c];
+                continue;
+              }
               const same = patch && !patch.f && !patch.p && String(patch.v ?? '') === String(cell ? textValue(cell.td) : '');
               if (same) continue;
               event.cancel = true;
@@ -288,15 +373,18 @@
         if (!meta) continue;
         const changedRange = range.getRange();
         const sheet = book.getSheetBySheetId(meta.id);
+        const changedRows = new Set();
         for (const cell of meta.cells.values()) {
           if (!cell.input || cell.row < changedRange.startRow || cell.row > changedRange.endRow ||
             cell.col < changedRange.startColumn || cell.col > changedRange.endColumn) continue;
           const value = sheet.getRange(cell.row, cell.col).getValue();
-          if (Number(value || 0) === Number(cell.input.value || 0)) continue;
+          if (type === 'quick-calc' ? String(value ?? '') === cell.input.value : Number(value || 0) === Number(cell.input.value || 0)) continue;
           cell.input.value = value == null ? '' : String(value);
           cell.input.dispatchEvent(new Event('input', { bubbles: true }));
+          changedRows.add(cell.row);
         }
         syncDerived(meta);
+        if (type === 'quick-calc' && changedRows.size) syncQcRows(meta, changedRows);
       }
     });
     listen(api.Event.CommandExecuted, event => {
@@ -309,12 +397,27 @@
       const meta = instance.sheets.get(sheet.getSheetId());
       const active = sheet.getSelection()?.getCurrentCell();
       const tr = meta?.rows.get(active?.actualRow ?? active?.startRow);
+      const column = active?.actualColumn ?? active?.startColumn;
+      const header = meta?.cells.get(`${meta.headerRows - 1},${column}`)?.td;
       bar.replaceChildren();
-      const hint = document.createElement('span');
-      hint.className = 'lms-sheet-hint';
-      hint.textContent = '单击选格 · 拖选区域 · Ctrl+C/V 复制粘贴 · 双击/F2 编辑';
-      bar.appendChild(hint);
+      let actionTarget = bar;
+      if (type === 'quick-calc') {
+        bar.hidden = !header?.dataset.empId;
+        if (bar.hidden) return;
+        const menu = document.createElement('details');
+        const title = document.createElement('summary');
+        title.textContent = `${textValue(header)} ⋯`;
+        title.title = '员工详情与列顺序';
+        actionTarget = document.createElement('div');
+        actionTarget.className = 'qc-employee-menu';
+        menu.append(title, actionTarget);
+        bar.appendChild(menu);
+      }
       if (type === 'work-edit') {
+        const hint = document.createElement('span');
+        hint.className = 'lms-sheet-hint';
+        hint.textContent = '单击选格 · 拖选区域 · Ctrl+C/V 复制粘贴 · 双击/F2 编辑';
+        bar.appendChild(hint);
         for (const kind of ['order', 'model']) {
           const original = tr?.querySelector(`.work-choice-button[data-type="${kind}"]`);
           const button = document.createElement('button');
@@ -326,14 +429,12 @@
           bar.appendChild(button);
         }
       }
-      const column = active?.actualColumn ?? active?.startColumn;
-      const header = meta?.cells.get(`${meta.headerRows - 1},${column}`)?.td;
       if (header?.dataset.empId) {
         const details = document.createElement('button');
         details.className = 'btn btn-secondary btn-sm';
         details.textContent = '员工详情';
         details.onclick = () => showEmployeeDetail(Number(header.dataset.empId));
-        bar.appendChild(details);
+        actionTarget.appendChild(details);
         for (const direction of [-1, 1]) {
           const move = document.createElement('button');
           move.className = 'btn btn-secondary btn-sm';
@@ -349,29 +450,19 @@
               swapIds(headers.map(cell => Number(cell.td.dataset.empId)), Number(header.dataset.empId), Number(neighbor.td.dataset.empId)));
             if (type === 'work-edit') renderSpreadsheet(); else renderQcDeptTables();
           };
-          bar.appendChild(move);
+          actionTarget.appendChild(move);
         }
       }
+      if (type === 'quick-calc') return;
       const add = document.createElement('button');
       add.className = 'btn btn-primary btn-sm';
       add.textContent = '+ 添加行';
-      let deptSelect;
-      if (type === 'quick-calc') {
-        deptSelect = document.createElement('select');
-        deptSelect.setAttribute('aria-label', '添加行的部门');
-        for (const dept of _qcState.departments) {
-          const option = new Option(dept.name, dept.id);
-          option.selected = String(dept.id) === meta.id.replace('dept-', '');
-          deptSelect.add(option);
-        }
-        bar.appendChild(deptSelect);
-      }
-      add.onclick = () => type === 'work-edit' ? addWorkRow() : addQcDeptRow(Number(deptSelect.value));
+      add.onclick = () => addWorkRow();
       const remove = document.createElement('button');
       remove.className = 'btn btn-danger btn-sm';
       remove.textContent = '删除选中行';
       remove.disabled = !tr;
-      remove.onclick = () => type === 'work-edit' ? deleteWorkRow(tr.dataset.rowKey) : removeQcDeptRow(tr.dataset.rowKey);
+      remove.onclick = () => deleteWorkRow(tr.dataset.rowKey);
       bar.append(add, remove);
     };
     listen(api.Event.SelectionChanged, updateActions);
@@ -379,7 +470,7 @@
     instance.updateActions = updateActions;
     updateActions();
     // 鼠标点击工具栏前完成正在输入的数字。
-    bar.addEventListener('mousedown', () => { if (book.isCellEditing()) void book.endEditingAsync(true); });
+    bar.onmousedown = () => { if (book.isCellEditing()) void book.endEditingAsync(true); };
     const first = sheets[0];
     const inputCell = Array.from(first.cells.values()).find(cell => cell.input);
     if (inputCell) book.getActiveSheet().setActiveRange(book.getActiveSheet().getRange(inputCell.row, inputCell.col));
