@@ -26,7 +26,7 @@ with db.get_connection() as conn:
                 (2026,9,1,1,1,1,1),(2026,9,1,1,2,2,1);
         """)
         conn.executemany('INSERT INTO app_settings(key,value) VALUES(?,?)',
-                         [('globalYear','2026'),('globalMonth','9'),('sidebar-width','220')])
+                         [('ui_globalYear','2026'),('ui_globalMonth','9'),('ui_sidebar-width','220')])
 
 from api_server import app
 import uvicorn

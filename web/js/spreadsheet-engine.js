@@ -56,7 +56,7 @@
     const name = type === 'work-edit' ? '做货记录' : table.closest('.qc-dept-section')?.querySelector('.qc-dept-name')?.textContent || `部门${index + 1}`;
     let columnCount = 0;
     Array.from(table.rows).forEach((tr, tableRow) => {
-      // 行号是数据标识的一部分，空行不能在刷新时被压缩掉。
+      // 业务行标识与电子表格行号对应。
       const r = type === 'quick-calc' && tr.dataset.rowKey
         ? Number(tr.dataset.rowKey.split('_')[1]) + headerRows : tableRow;
       cellData[r] = {};
@@ -98,7 +98,7 @@
     }
     const data = { id, name, cellData, mergeData, columnData,
       rowCount: type === 'quick-calc' ? Math.max(200, ...Array.from(rows.keys(), r => r + 101)) : Math.max(table.rows.length + 20, 50),
-      columnCount: Math.max(columnCount + 3, 12),
+      columnCount: type === 'quick-calc' ? columnCount : Math.max(columnCount + 3, 12),
       defaultColumnWidth: 92, defaultRowHeight: 32,
       rowHeader: { width: 42 }, columnHeader: { height: 25 },
       freeze: { startRow: headerRows, startColumn: type === 'work-edit' ? 2 : 0, ySplit: headerRows, xSplit: type === 'work-edit' ? 2 : 0 },
@@ -289,16 +289,20 @@
       try { api.syncExecuteCommand('sheet.mutation.set-range-values', { unitId: book.getId(), subUnitId: meta.id, cellValue }); }
       finally { instance.syncing = false; }
     };
-    const syncQcRows = (meta, changedRows) => {
+    const syncQcRows = (meta, changedRows, movedStyles = null) => {
       const sheet = book.getSheetBySheetId(meta.id);
       const cellValue = {};
       for (const cell of meta.cells.values()) {
         if (!changedRows.has(cell.row)) continue;
         const used = cell.td.closest('tr').dataset.qcUsed === 'true';
         const range = sheet.getRange(cell.row, cell.col);
-        const style = qcRowStyle(cell, used, { ...cell.baseStyle, ...range.getCellStyleData() });
+        const style = qcRowStyle(cell, used, { ...cell.baseStyle, ...(movedStyles?.get(cell.row)?.get(cell.col) || range.getCellStyleData()) });
         const patch = { s: style };
         if (!used) Object.assign(patch, { v: null, t: 2, p: null });
+        else if (movedStyles) {
+          const value = textValue(cell.td);
+          Object.assign(patch, { v: value === '' ? null : value, t: 2, p: null });
+        }
         (cellValue[cell.row] ||= {})[cell.col] = patch;
       }
       instance.syncing = true;
@@ -311,7 +315,13 @@
       } finally { instance.syncing = false; }
     };
     listen(api.Event.BeforeSheetEditStart, event => {
-      if (!getCell(instance.sheets.get(event.worksheet.getSheetId()), event.row, event.column)?.input) event.cancel = true;
+      const meta = instance.sheets.get(event.worksheet.getSheetId());
+      if (type === 'quick-calc' && event.row > meta.headerRows + getQcUsedRowCount(meta.id.replace('dept-', ''))) {
+        event.cancel = true;
+        notify('请先填写上一行，不能跳过空白行');
+        return;
+      }
+      if (!getCell(meta, event.row, event.column)?.input) event.cancel = true;
     });
     listen(api.Event.BeforeCommandExecute, event => {
       if (instance.syncing) return;
@@ -332,6 +342,7 @@
       if (event.id === 'sheet.mutation.set-range-values') {
         const meta = instance.sheets.get(event.params?.subUnitId);
         if (!meta) { event.cancel = true; return; }
+        const proposedRows = new Map();
         for (const [r, columns] of Object.entries(event.params.cellValue || {})) {
           for (const [c, patch] of Object.entries(columns || {})) {
             const cell = getCell(meta, r, c);
@@ -361,6 +372,26 @@
               notify('对数须为非负整数，单价须为非负数字');
               return;
             }
+            if (type === 'quick-calc') {
+              const row = Number(r);
+              if (!proposedRows.has(row)) proposedRows.set(row, new Map([...meta.columnTemplates.keys()]
+                .map(col => meta.cells.get(`${row},${col}`)).filter(item => item.input)
+                .map(item => [item.col, Number(item.input.value || 0)])));
+              proposedRows.get(row).set(Number(c), Number(patch?.v || 0));
+            }
+          }
+        }
+        if (type === 'quick-calc') {
+          const firstEmptyRow = meta.headerRows + getQcUsedRowCount(meta.id.replace('dept-', ''));
+          for (const row of proposedRows.keys()) {
+            if (row <= firstEmptyRow) continue;
+            for (let preceding = firstEmptyRow; preceding < row; preceding++) {
+              if (![...(proposedRows.get(preceding)?.values() || [])].some(value => value > 0)) {
+                event.cancel = true;
+                notify('请连续录入，不能跳过空白行粘贴或编辑');
+                return;
+              }
+            }
           }
         }
         recordHistory();
@@ -368,6 +399,7 @@
     });
     listen(api.Event.SheetValueChanged, event => {
       if (instance.syncing) return;
+      const qcChanges = new Map();
       for (const range of event.effectedRanges) {
         const meta = instance.sheets.get(range.getSheetId());
         if (!meta) continue;
@@ -384,7 +416,29 @@
           changedRows.add(cell.row);
         }
         syncDerived(meta);
-        if (type === 'quick-calc' && changedRows.size) syncQcRows(meta, changedRows);
+        if (type === 'quick-calc' && changedRows.size) {
+          const combined = qcChanges.get(meta) || new Set();
+          changedRows.forEach(row => combined.add(row));
+          qcChanges.set(meta, combined);
+        }
+      }
+      for (const [meta, changedRows] of qcChanges) {
+        const sheet = book.getSheetBySheetId(meta.id);
+        const moves = compactQcRows(meta.id.replace('dept-', ''));
+        if (!moves.size) { syncQcRows(meta, changedRows); continue; }
+        const styles = new Map([...meta.rows.keys()].map(row => [row, new Map([...meta.cells.values()]
+          .filter(cell => cell.row === row).map(cell => [cell.col, sheet.getRange(row, cell.col).getCellStyleData()]))]));
+        const movedStyles = new Map([...moves].map(([from, to]) => [Number(to.split('_')[1]) + meta.headerRows, styles.get(Number(from.split('_')[1]) + meta.headerRows)]));
+        for (const row of meta.rows.keys()) {
+          const tr = meta.rows.get(row);
+          const rowKey = tr.dataset.rowKey;
+          for (const cell of meta.cells.values()) {
+            if (cell.row !== row || !cell.input) continue;
+            cell.input.value = String((cell.isPrice ? _qcDeptRows[rowKey]?.[cell.input.dataset.subId] : _qcState.qtyData[cell.input.dataset.key]) || '');
+          }
+          updateDeptRowTotals(rowKey);
+        }
+        syncQcRows(meta, new Set(meta.rows.keys()), movedStyles);
       }
     });
     listen(api.Event.CommandExecuted, event => {

@@ -24,6 +24,28 @@ function normalizeQcRows() {
   }
 }
 
+function getQcUsedRowCount(deptId) {
+  return Object.keys(_qcDeptRows).filter(key => key.startsWith(deptId + '_') && isQcRowUsed(key)).length;
+}
+
+// 清空中间行后收拢后续数据，保持每个部门的在用行连续排列。
+function compactQcRows(deptId) {
+  const keys = Object.keys(_qcDeptRows).filter(key => key.startsWith(deptId + '_') && isQcRowUsed(key))
+    .sort((a, b) => Number(a.split('_')[1]) - Number(b.split('_')[1]));
+  const moves = new Map(keys.map((key, index) => [key, `${deptId}_${index}`]).filter(([from, to]) => from !== to));
+  if (!moves.size) return moves;
+  const rows = keys.map(key => _qcDeptRows[key]);
+  const quantities = Object.entries(_qcState.qtyData).filter(([key]) => key.startsWith(deptId + '_'));
+  keys.forEach(key => delete _qcDeptRows[key]);
+  quantities.forEach(([key]) => delete _qcState.qtyData[key]);
+  keys.forEach((key, index) => { _qcDeptRows[`${deptId}_${index}`] = rows[index]; });
+  for (const [key, value] of quantities) {
+    const [rowKey, empId] = key.split(',');
+    if (keys.includes(rowKey)) _qcState.qtyData[`${moves.get(rowKey) || rowKey},${empId}`] = value;
+  }
+  return moves;
+}
+
 // ---- 初始化 ----
 async function initQuickCalc() {
   if (window.LmsSpreadsheet?.getInstance('qcDeptTablesWrap')) {
@@ -59,6 +81,7 @@ async function initQuickCalc() {
     _qcState.qtyData = {};
   }
   normalizeQcRows();
+  _qcState.departments.forEach(dept => compactQcRows(dept.id));
 
   // 重置工资视角按钮
   const btn = document.getElementById('qcViewModeBtn');
@@ -86,6 +109,7 @@ function renderQcDeptTables() {
   if (!wrap) return;
   window.LmsSpreadsheet?.dispose(wrap);
   normalizeQcRows();
+  _qcState.departments.forEach(dept => compactQcRows(dept.id));
 
   const { departments, subDepartments } = _qcState;
   const employees = orderEmployeesByDisplayPreference('quickcalc', _qcState.employees);
