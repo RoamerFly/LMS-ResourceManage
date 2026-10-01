@@ -314,44 +314,39 @@
         }
       } finally { instance.syncing = false; }
     };
-    // 只响应原地左键双击姓名，不把拖拽选区、Shift 扩选或键盘移格当作编辑人员。
-    let nameClickGesture = null;
-    let lastNameCellClick = null;
-    const trackNamePointerDown = event => {
-      nameClickGesture = { x: event.clientX, y: event.clientY, moved: false,
-        allowed: event.button === 0 && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey };
+    const personHeader = (meta, row, column) => {
+      const header = meta?.cells.get(`${row},${column}`)?.td;
+      return row === meta?.headerRows - 1 && header?.dataset.empId ? header : null;
     };
-    const trackNamePointerMove = event => {
-      if (nameClickGesture && Math.hypot(event.clientX - nameClickGesture.x, event.clientY - nameClickGesture.y) > 4) nameClickGesture.moved = true;
-    };
-    const trackNameDoubleClick = event => {
-      if (!nameClickGesture?.allowed || nameClickGesture.moved || event.button !== 0 ||
-        event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.target.tagName !== 'CANVAS') return;
-      const cell = lastNameCellClick;
-      if (!cell) return;
-      const meta = instance.sheets.get(cell.worksheet.getSheetId());
-      const header = meta?.cells.get(`${cell.row},${cell.column}`)?.td;
-      if (cell.row !== meta?.headerRows - 1 || !header?.dataset.empId) return;
-      const rect = cell.worksheet.getRange(cell.row, cell.column).getCellRect();
-      const canvas = event.target.getBoundingClientRect();
-      const x = event.clientX - canvas.x, y = event.clientY - canvas.y;
-      if (!rect || x < rect.x || x > rect.x + rect.width || y < rect.y || y > rect.y + rect.height) return;
-      // 直接使用浏览器的真实 dblclick；引擎内部启动编辑也会标记 Dblclick，不能据此弹窗。
-      nameClickGesture = null;
-      lastNameCellClick = null;
+    const editSelectedPerson = event => {
+      if (!host.contains(event.target) || !event.target.closest('[data-u-comp="editor"]')) return;
+      // 只读表头的键盘编辑可能被引擎提前拦截，在窗口捕获阶段识别录入意图。
+      if (event.type === 'keydown' && ((event.ctrlKey || event.metaKey || event.altKey) ||
+        !(event.key.length === 1 || ['F2', 'Backspace', 'Process', 'Dead'].includes(event.key)))) return;
+      const sheet = book.getActiveSheet();
+      const active = sheet.getSelection()?.getCurrentCell();
+      const header = personHeader(instance.sheets.get(sheet.getSheetId()),
+        active?.actualRow ?? active?.startRow, active?.actualColumn ?? active?.startColumn);
+      if (!header) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
       void showEditMemberModal(Number(header.dataset.empId));
     };
-    host.addEventListener('pointerdown', trackNamePointerDown, true);
-    host.addEventListener('pointermove', trackNamePointerMove, true);
-    host.addEventListener('dblclick', trackNameDoubleClick, true);
+    window.addEventListener('keydown', editSelectedPerson, true);
+    window.addEventListener('compositionstart', editSelectedPerson, true);
     instance.disposables.push({ dispose() {
-      host.removeEventListener('pointerdown', trackNamePointerDown, true);
-      host.removeEventListener('pointermove', trackNamePointerMove, true);
-      host.removeEventListener('dblclick', trackNameDoubleClick, true);
+      window.removeEventListener('keydown', editSelectedPerson, true);
+      window.removeEventListener('compositionstart', editSelectedPerson, true);
     } });
-    listen(api.Event.CellClicked, event => { lastNameCellClick = event; });
     listen(api.Event.BeforeSheetEditStart, event => {
       const meta = instance.sheets.get(event.worksheet.getSheetId());
+      const header = personHeader(meta, event.row, event.column);
+      // 姓名由人员资料统一维护：只选中不弹窗，开始编辑（打字、F2、双击）时打开人员编辑。
+      if (header) {
+        event.cancel = true;
+        void showEditMemberModal(Number(header.dataset.empId));
+        return;
+      }
       if (type === 'quick-calc' && event.row > meta.headerRows + getQcUsedRowCount(meta.id.replace('dept-', ''))) {
         event.cancel = true;
         notify('请先填写上一行，不能跳过空白行');

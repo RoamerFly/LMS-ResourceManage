@@ -95,12 +95,18 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
 
   await click('.nav-item[data-view="work"]');
   await waitFor(`LmsSpreadsheet.getInstance('spreadsheetWrap')?.ready`);
+  await delay(400);
   await waitFor(`(() => {const instance=LmsSpreadsheet.getInstance('spreadsheetWrap');const sheet=instance.book.save().sheets.work;const rect=instance.book.getActiveSheet().getRange(2,2).getCellRect();return rect.x===sheet.rowHeader.width+sheet.columnData[0].w+sheet.columnData[1].w && rect.width===sheet.columnData[2].w;})()`);
   await cellClick('spreadsheetWrap',1,2);
   assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'做货表头单击只选格');
+  await waitFor(`document.activeElement?.getAttribute('data-u-comp')==='editor'`);
   await type('9');
+  await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.getElementById('m-name')?.value==='张三'`);
+  await click('#modalBox .btn-secondary');
+  await cellClick('spreadsheetWrap',1,2);
   await key('F2',113);
-  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'做货表头单击后打字/F2不打开人员编辑');
+  await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.getElementById('m-name')?.value==='张三'`);
+  await click('#modalBox .btn-secondary');
   await cellClick('spreadsheetWrap',2,2);
   await waitFor(`document.activeElement?.getAttribute('data-u-comp')==='editor'`);
   await type('7');
@@ -146,9 +152,12 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await cellClick('qcDeptTablesWrap',0,qtyCol);
   assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'快捷表头单击只选格');
   await key('F2',113);
-  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'F2不打开人员编辑');
+  await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.getElementById('m-name')?.value==='张三甲'`);
+  await click('#modalBox .btn-secondary');
+  await cellClick('qcDeptTablesWrap',0,qtyCol);
   await type('9');
-  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'快捷表头单击后打字不打开人员编辑');
+  await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.getElementById('m-name')?.value==='张三甲'`);
+  await click('#modalBox .btn-secondary');
   await cellClick('qcDeptTablesWrap',1,qtyCol);
   await type('88');
   assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'快捷数量格输入不打开人员编辑');
@@ -206,5 +215,5 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await click('.nav-item[data-view="overview"]');
   await waitFor(`_currentView==='overview'`);
   assert.equal(await evaluate(`document.querySelector('.overview-card[data-view="departments"],.overview-card[data-view="prices"]')`),null,'主页不重复显示已合并功能');
-  console.log('PASS: 人员卡片单击编辑、两种表头单击只选格/双击编辑/数据保留/工资视角恢复/拖选与键盘不误触、部门树/订单单价/极简模式/SQLite重启');
+  console.log('PASS: 人员卡片单击编辑、两种表头单击只选格/打字与F2及双击打开人员编辑/数据保留/工资视角恢复/拖选与移格不误触、部门树/订单单价/极简模式/SQLite重启');
 };
