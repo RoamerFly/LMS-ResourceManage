@@ -95,6 +95,12 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet().getRange(2,2).getCellStyleData().bg.rgb`),'#ff0000','刷新保留格式');
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('spreadsheetWrap').book.save().sheets.work.columnData[2].w`),140,'刷新保留列宽');
   assert.ok(await evaluate(`Object.values(savedSettings).some(value=>JSON.parse(value).work?.columns['emp-1']?.w===140)`),'格式通过设置API写入数据库');
+  const workStyles = await evaluate(`(() => {const s=LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet();return [2,3].map(c=>s.getRange(2,c).getCellStyleData());})()`);
+  await evaluate(`void LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet().getRange(2,2))`);
+  await evaluate(`navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob(['7\\t8'],{type:'text/plain'}),'text/html':new Blob(['<table><tr><td style="font-family:Arial;font-size:24pt;color:#ff00ff;background-color:#000000;text-align:left;border:4px solid red"><b>7</b></td><td style="font-size:30pt;background-color:#abcdef">8</td></tr></table>'],{type:'text/html'})})])`);
+  await key('v',86,2);
+  await delay(150);
+  assert.deepEqual(await evaluate(`(() => {const s=LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet();return [2,3].map(c=>s.getRange(2,c).getCellStyleData());})()`),workStyles,'做货粘贴全部沿用目标字体字号颜色边框对齐及数字格式，保留目标已有手动样式');
   await evaluate(`document.getElementById('spreadsheetWrap').style.display='none'; _currentView='quickcalc'; clearHistory(); renderQcDeptTables();`);
   await delay(400);
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getSheets().length`), 2, '部门工作表标签');
@@ -131,7 +137,9 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   await pasteSparse();
   assert.deepEqual(await evaluate(`(() => {const s=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet();return [1,2,3].map(r=>[0,1,2,3].map(c=>s.getRange(r,c).getCellStyleData().bg.rgb));})()`),Array.from({length:3},()=>['#f0fdf4','#eff6ff','#eff6ff','#fef9c3']),'稀疏XLSX粘贴和相同值重复粘贴后，有数据的整行包括空格保持在用样式');
   assert.equal(await evaluate(`isQcRowUsed('1_2') && _qcState.qtyData['1_2,2']===6`),true,'仅末列有值的新行也在用');
-  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,1).getCellStyleData().fs`),16,'粘贴保留非业务格式字体');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,1).getCellStyleData().fs`),13,'粘贴不引入源字体字号');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,1).getCellStyleData().fs`),13,'新增行的空格也使用本表字号');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0).getCellStyleData().n.pattern`),'#,##0.00','单价保留本表小数格式');
   await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,0,1,3).setValues([[null,null,null]])`);
   await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0,2,3).setValues([[3.75,12,13],[2.5,7,8]])`);
   const blankPoint = await evaluate(`(() => {const rect=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,1).getCellRect();const canvas=Array.from(document.querySelectorAll('#qcDeptTablesWrap canvas'),el=>el.getBoundingClientRect()).sort((a,b)=>b.width*b.height-a.width*a.height)[0];return {x:canvas.x+rect.x+rect.width/2,y:canvas.y+rect.y+rect.height/2};})()`);

@@ -585,6 +585,12 @@
             const cell = getCell(meta, r, c);
             const writesValue = patch === null || own(patch, 'v') || own(patch, 'f') || own(patch, 'p');
             if (!writesValue) continue;
+            // 默认粘贴携带 s（包括空格的 null 样式）：数值沿用目标格式，新增行回退到业务模板。
+            // 只修改写值补丁，工具栏主动设置字体、颜色等纯格式操作仍可正常使用。
+            if (cell && patch && own(patch, 's')) {
+              const targetStyle = book.getSheetBySheetId(meta.id).getRange(Number(r), Number(c)).getCellStyleData();
+              patch.s = { ...cell.baseStyle, ...targetStyle };
+            }
             if (!cell?.input) {
               // 允许选中整条快捷计算数据行按 Delete，合计由业务计算更新。
               // 空白扩展列不保存，表头仍保持只读。
@@ -599,7 +605,7 @@
               notify('请在对数或单价单元格中输入；表头与合计为只读');
               return;
             }
-            // 外部表格的富文本数字转成数值，保留单元格样式。
+            // 外部表格的富文本数字转成数值，消除源文本内部的字体与颜色。
             if (patch?.p && !patch.f) {
               const plain = String(patch.p.body?.dataStream || '').trim();
               if (validValue(cell, plain)) { patch.v = Number(plain || 0); patch.t = 2; patch.p = null; }
@@ -608,6 +614,10 @@
               event.cancel = true;
               notify('对数须为非负整数，单价须为非负数字');
               return;
+            }
+            if (patch && patch.v != null && patch.v !== '') {
+              patch.v = Number(patch.v);
+              patch.t = 2;
             }
             if (type === 'quick-calc') {
               const row = Number(r);

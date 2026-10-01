@@ -193,7 +193,9 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
     await delay(150);
   }
   const usedColors = () => evaluate(`(() => {const s=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet();return [1,2].map(r=>[${qtyCol},${qtyCol+1}].map(c=>s.getRange(r,c).getCellStyleData().bg.rgb));})()`);
+  const usedFontSizes = () => evaluate(`(() => {const s=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet();return [1,2].map(r=>[${qtyCol},${qtyCol+1}].map(c=>s.getRange(r,c).getCellStyleData().fs));})()`);
   assert.deepEqual(await usedColors(),[['#eff6ff','#eff6ff'],['#eff6ff','#eff6ff']],'重复XLSX粘贴空格后，有值行的所有人员格仍在用');
+  assert.deepEqual(await usedFontSizes(),[[13,13],[13,13]],'粘贴使用本表字号，不带入XLSX的18号字体');
   await click('#qcSaveBtn');
   await waitFor(`get('/api/quick-calc-save?year=2026&month=9').then(data=>data.qty_data['1_0,1']===88 && data.qty_data['1_1,1']===9)`);
   await delay(700);
@@ -204,6 +206,7 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await ready('qcDeptTablesWrap');
   await delay(350);
   assert.deepEqual(await usedColors(),[['#eff6ff','#eff6ff'],['#eff6ff','#eff6ff']],'粘贴行样式保存和重启后保持一致');
+  assert.deepEqual(await usedFontSizes(),[[13,13],[13,13]],'保存与重启后仍保持目标表格字体');
   assert.equal(await cell('qcDeptTablesWrap',1,qtyCol),88,'稀疏粘贴重启后数值保留');
   const qcShot = await call('Page.captureScreenshot',{format:'png'});
   const qcScreenshot = path.join(os.tmpdir(),'lms-quickcalc-compact.png');
