@@ -141,5 +141,11 @@ def init_database():
         conn.commit()
         print("[db] employee sort_order column added")
 
+    # 为已有快捷计算保存增加订单核对信息，保留旧月份的数据。
+    cur.execute("PRAGMA table_info(quick_calc_saves)")
+    if "row_meta" not in {row[1] for row in cur.fetchall()}:
+        cur.execute("ALTER TABLE quick_calc_saves ADD COLUMN row_meta TEXT NOT NULL DEFAULT '{}'")
+        conn.commit()
+
     conn.close()
     print(f"[db] database ready: {DB_PATH}")

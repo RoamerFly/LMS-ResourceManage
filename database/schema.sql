@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS quick_calc_saves (
     month INTEGER NOT NULL,
     dept_rows TEXT NOT NULL DEFAULT '{}',
     qty_data TEXT NOT NULL DEFAULT '{}',
+    row_meta TEXT NOT NULL DEFAULT '{}',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(year, month)
 );

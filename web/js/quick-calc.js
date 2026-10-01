@@ -7,13 +7,19 @@ let qcColumnDraggingDeptId = 0;
 let _qcLoadedPeriod = null;
 let _qcSaveQueue = Promise.resolve();
 
-// 空白行只属于电子表格视图；数据库仅保存有单价或对数的在用行。
+// 空白行只属于电子表格视图；订单核对信息、单价或对数均可启用行。
 function isQcRowUsed(rowKey) {
-  return Object.values(_qcDeptRows[rowKey] || {}).some(value => Number(value) > 0) ||
+  const meta = _qcState.rowMeta[rowKey];
+  return Boolean(meta?.orderNo?.trim() || Number(meta?.orderQty) > 0) ||
+    Object.values(_qcDeptRows[rowKey] || {}).some(value => Number(value) > 0) ||
     Object.entries(_qcState.qtyData).some(([key, value]) => key.startsWith(rowKey + ',') && Number(value) > 0);
 }
 
 function normalizeQcRows() {
+  for (const [rowKey, meta] of Object.entries(_qcState.rowMeta)) {
+    if (meta.orderNo?.trim() || Number(meta.orderQty) > 0) _qcDeptRows[rowKey] ||= {};
+    else delete _qcState.rowMeta[rowKey];
+  }
   for (const [key, value] of Object.entries(_qcState.qtyData)) {
     if (Number(value) > 0) _qcDeptRows[key.split(',')[0]] ||= {};
     else delete _qcState.qtyData[key];
@@ -35,10 +41,16 @@ function compactQcRows(deptId) {
   const moves = new Map(keys.map((key, index) => [key, `${deptId}_${index}`]).filter(([from, to]) => from !== to));
   if (!moves.size) return moves;
   const rows = keys.map(key => _qcDeptRows[key]);
+  const references = keys.map(key => _qcState.rowMeta[key]);
+  Object.keys(_qcState.rowMeta).filter(key => key.startsWith(deptId + '_')).forEach(key => delete _qcState.rowMeta[key]);
   const quantities = Object.entries(_qcState.qtyData).filter(([key]) => key.startsWith(deptId + '_'));
   keys.forEach(key => delete _qcDeptRows[key]);
   quantities.forEach(([key]) => delete _qcState.qtyData[key]);
-  keys.forEach((key, index) => { _qcDeptRows[`${deptId}_${index}`] = rows[index]; });
+  keys.forEach((key, index) => {
+    const rowKey = `${deptId}_${index}`;
+    _qcDeptRows[rowKey] = rows[index];
+    if (references[index]) _qcState.rowMeta[rowKey] = references[index];
+  });
   for (const [key, value] of quantities) {
     const [rowKey, empId] = key.split(',');
     if (keys.includes(rowKey)) _qcState.qtyData[`${moves.get(rowKey) || rowKey},${empId}`] = value;
@@ -71,6 +83,7 @@ async function initQuickCalc() {
   const month = parseInt(document.getElementById('qcMonth')?.value || _state.currentMonth);
   const saved = await get(`/api/quick-calc-save?year=${year}&month=${month}`);
   _qcLoadedPeriod = { year, month };
+  _qcState.rowMeta = { ...(saved?.row_meta || {}) };
 
   if (saved && saved.dept_rows && Object.keys(saved.dept_rows).length > 0) {
     _qcDeptRows = { ...saved.dept_rows };
@@ -154,6 +167,9 @@ function renderQcDeptTables() {
 
       // 表头仅包含业务数据。
       html += '<thead><tr>';
+      html += '<th style="background:#ede9fe;color:#5b21b6">订单号</th>';
+      html += '<th style="background:#ede9fe;color:#5b21b6">订单数量</th>';
+      html += '<th style="background:#fef3c7;color:#92400e">已做数量</th>';
       for (const sub of deptSubs) {
         html += `<th style="min-width:70px;width:70px;background:#d1fae5;color:#065f46;position:sticky;top:0;z-index:10;text-align:center;">
           ${escHtml(sub.name)}<br><span class="qc-th-subtext">单价</span>
@@ -178,11 +194,13 @@ function renderQcDeptTables() {
         const row = _qcDeptRows[rowKey] || {};
 
         // 计算行合计：对数视角合计对数，工资视角合计金额。
+        let doneQty = 0;
         let rowTotal = 0;
         for (const emp of deptEmps) {
           const qtyKey = `${rowKey},${emp.id}`;
           const qty = _qcState.qtyData[qtyKey] || 0;
           const empSubPrice = row[emp.sub_dept_id] || 0;
+          doneQty += qty;
           rowTotal += isWage ? roundNumber(qty * empSubPrice) : qty;
         }
         rowTotal = isWage ? roundNumber(rowTotal) : rowTotal;
@@ -191,6 +209,18 @@ function renderQcDeptTables() {
 
         html += `<tr data-row-key="${escHtml(rowKey)}" data-qc-used="${isQcRowUsed(rowKey)}">`;
 
+
+        const reference = _qcState.rowMeta[rowKey] || {};
+        html += `<td class="qc-reference-cell" style="background:#f5f3ff;color:#5b21b6">
+          <input type="text" class="cell-input qc-order-input" data-row-key="${escHtml(rowKey)}"
+            data-ref-field="orderNo" value="${escHtml(reference.orderNo || '')}" oninput="onQcReferenceInput(this)">
+        </td>`;
+        html += `<td class="qc-reference-cell" style="background:#f5f3ff;color:#5b21b6">
+          <input type="number" min="0" step="1" class="cell-input qc-order-qty-input" data-row-key="${escHtml(rowKey)}"
+            data-ref-field="orderQty" value="${reference.orderQty || ''}" oninput="onQcReferenceInput(this)">
+        </td>`;
+        html += `<td class="qc-done-display" data-sheet-value="${doneQty}"
+          style="background:#fef9c3;color:#92400e;font-weight:700;text-align:center">${doneQty}</td>`;
 
         // 各小部门单价列（纯手动输入）
         for (const sub of deptSubs) {
@@ -407,6 +437,21 @@ function onQcCellBlur(el, type) {
   }
 }
 
+// 订单信息仅用于核对，独立保存，不参与单价和工资计算。
+function onQcReferenceInput(el) {
+  const rowKey = el.dataset.rowKey;
+  const field = el.dataset.refField;
+  const value = field === 'orderNo' ? el.value.trim() : (Number(el.value) || 0);
+  const meta = _qcState.rowMeta[rowKey] ||= {};
+  if (value) meta[field] = value;
+  else delete meta[field];
+  if (!Object.keys(meta).length) delete _qcState.rowMeta[rowKey];
+  _qcDeptRows[rowKey] ||= {};
+  updateDeptRowTotals(rowKey);
+  clearTimeout(window._qcAutoSaveTimer);
+  window._qcAutoSaveTimer = setTimeout(() => autoSaveQc(), 500);
+}
+
 // ---- 单价输入变化 ----
 function onQcPriceInput(el) {
   const rowKey = el.dataset.rowKey;
@@ -595,11 +640,13 @@ function updateDeptRowTotals(rowKey) {
   const deptEmps = _qcState.employees.filter(e => e.dept_id === deptId);
   const isWage = _qcState.qcViewMode === 'wage';
 
+  let doneQty = 0;
   let rowTotal = 0;
   for (const emp of deptEmps) {
     const qtyKey = `${rowKey},${emp.id}`;
     const qty = _qcState.qtyData[qtyKey] || 0;
     const empSubPrice = row[emp.sub_dept_id] || 0;
+    doneQty += qty;
     rowTotal += isWage ? roundNumber(qty * empSubPrice) : qty;
 
     // 更新该成员的工资显示（工资视角下）
@@ -625,6 +672,8 @@ function updateDeptRowTotals(rowKey) {
     for (const tr of rows) {
       if (tr.dataset.rowKey === rowKey) {
         tr.dataset.qcUsed = String(isQcRowUsed(rowKey));
+        const doneEl = tr.querySelector('.qc-done-display');
+        if (doneEl) { doneEl.dataset.sheetValue = String(doneQty); doneEl.textContent = String(doneQty); }
         const totalEl = tr.querySelector('.row-total-display');
         if (totalEl) {
           rowTotal = isWage ? roundNumber(rowTotal) : rowTotal;
@@ -667,6 +716,7 @@ async function autoSaveQc() {
     year, month,
     dept_rows: _qcDeptRows,
     qty_data: _qcState.qtyData,
+    row_meta: _qcState.rowMeta,
   }));
   const saved = _qcSaveQueue.catch(() => {}).then(() => post('/api/quick-calc-save', payload));
   _qcSaveQueue = saved;

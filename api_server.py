@@ -431,6 +431,7 @@ async def api_save_quick_calc(payload: dict):
         month=payload["month"],
         dept_rows=payload.get("dept_rows", {}),
         qty_data=payload.get("qty_data", {}),
+        row_meta=payload.get("row_meta", {}),
     )
 
 

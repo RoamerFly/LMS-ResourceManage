@@ -13,7 +13,10 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
     throw new Error(`页面未就绪：${expression}`);
   };
   const loaded = () => waitFor(`document.getElementById('loadingOverlay')?.style.display==='none'`);
-  const cellPoint = (wrap,row,col) => evaluate(`(() => {const rect=LmsSpreadsheet.getInstance('${wrap}').book.getActiveSheet().getRange(${row},${col}).getCellRect();const canvas=Array.from(document.querySelectorAll('#${wrap} canvas'),canvas=>canvas.getBoundingClientRect()).sort((a,b)=>b.width*b.height-a.width*a.height)[0];return {x:canvas.x+rect.x+rect.width/2,y:canvas.y+rect.y+rect.height/2};})()`);
+  const cellPoint = async (wrap,row,col) => {
+    await waitFor(`LmsSpreadsheet.getInstance('${wrap}')?.ready && !document.querySelector('#${wrap} [data-u-comp="workbench-skeleton-shimmer"]')`);
+    return evaluate(`(() => {const rect=LmsSpreadsheet.getInstance('${wrap}').book.getActiveSheet().getRange(${row},${col}).getCellRect();const canvas=Array.from(document.querySelectorAll('#${wrap} canvas'),canvas=>canvas.getBoundingClientRect()).sort((a,b)=>b.width*b.height-a.width*a.height)[0];return {x:canvas.x+rect.x+rect.width/2,y:canvas.y+rect.y+rect.height/2};})()`);
+  };
   const cellClick = async (wrap,row,col,modifiers=0) => {
     const point=await cellPoint(wrap,row,col);
     await mouse('mousePressed',point,{button:'left',buttons:1,clickCount:1,modifiers});

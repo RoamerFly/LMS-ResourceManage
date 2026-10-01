@@ -1080,20 +1080,22 @@ def delete_data_by_filter(emp_id: int = None, year: int = None, month: int = Non
 
 # ── 快捷计算自动保存 ──────────────────────────────────────
 
-def save_quick_calc(year: int, month: int, dept_rows: dict, qty_data: dict):
+def save_quick_calc(year: int, month: int, dept_rows: dict, qty_data: dict, row_meta: dict = None):
     """保存快捷计算大部门分组表格的填写状态（按年月覆盖）"""
     import json
     conn = get_connection()
     conn.execute("""
-        INSERT INTO quick_calc_saves (year, month, dept_rows, qty_data)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO quick_calc_saves (year, month, dept_rows, qty_data, row_meta)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(year, month) DO UPDATE SET
             dept_rows = excluded.dept_rows,
             qty_data = excluded.qty_data,
+            row_meta = excluded.row_meta,
             updated_at = CURRENT_TIMESTAMP
     """, (year, month,
           json.dumps(dept_rows, ensure_ascii=False),
-          json.dumps(qty_data, ensure_ascii=False)))
+          json.dumps(qty_data, ensure_ascii=False),
+          json.dumps(row_meta or {}, ensure_ascii=False)))
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -1104,7 +1106,7 @@ def load_quick_calc(year: int, month: int):
     import json
     conn = get_connection()
     cur = conn.execute(
-        "SELECT dept_rows, qty_data FROM quick_calc_saves WHERE year=? AND month=?",
+        "SELECT dept_rows, qty_data, row_meta FROM quick_calc_saves WHERE year=? AND month=?",
         (year, month)
     )
     row = cur.fetchone()
@@ -1114,6 +1116,7 @@ def load_quick_calc(year: int, month: int):
     return {
         "dept_rows": json.loads(row[0]),
         "qty_data": json.loads(row[1]),
+        "row_meta": json.loads(row[2]),
     }
 
 

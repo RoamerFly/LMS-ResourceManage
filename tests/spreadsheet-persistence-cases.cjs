@@ -12,9 +12,10 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
     }
     throw new Error(`页面未就绪：${expression}`);
   };
-  const ready = wrap => waitFor(`window.LmsSpreadsheet?.getInstance('${wrap}')?.ready === true`);
+  const ready = wrap => waitFor(`window.LmsSpreadsheet?.getInstance('${wrap}')?.ready === true && !document.querySelector('#${wrap} [data-u-comp="workbench-skeleton-shimmer"]')`);
   const cell = (wrap,r,c) => evaluate(`Number(LmsSpreadsheet.getInstance('${wrap}').book.getActiveSheet().getRange(${r},${c}).getValue())`);
   const select = async (wrap,r,c,count=1) => {
+    await ready(wrap);
     const at = await evaluate(`(() => {const rect=LmsSpreadsheet.getInstance('${wrap}').book.getActiveSheet().getRange(${r},${c}).getCellRect();const canvas=Array.from(document.querySelectorAll('#${wrap} canvas'),el=>el.getBoundingClientRect()).sort((a,b)=>b.width*b.height-a.width*a.height)[0];return {x:canvas.x+rect.x+rect.width/2,y:canvas.y+rect.y+rect.height/2};})()`);
     for (let n=1;n<=count;n++) {
       await mouse('mousePressed',at,{button:'left',buttons:1,clickCount:n});
@@ -81,6 +82,13 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   const priceCol = await evaluate(`Array.from(Array.from(LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.values())[0].cells.values()).find(cell=>cell.isPrice && cell.input.dataset.subId==='1').col`);
   const qtyCol = await evaluate(`Array.from(Array.from(LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.values())[0].cells.values()).find(cell=>cell.input?.classList.contains('qc-qty-input') && cell.input.dataset.key==='1_0,1').col`);
 
+  await select('qcDeptTablesWrap',1,0);
+  await type('000123');
+  await key('Tab',9);
+  await type('100');
+  await key('Enter',13);
+  assert.equal(await evaluate(`_qcState.rowMeta['1_0'].orderNo`),'000123','真实键盘录入文本订单号保留前导零');
+  assert.equal(await evaluate(`isQcRowUsed('1_0')`),true,'仅填写订单信息即启用行');
   await select('qcDeptTablesWrap',1,priceCol);
   await type('2.75');
   await key('Tab',9);
@@ -90,6 +98,8 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await type('42');
   await click('#qcSaveBtn');
   await waitFor(`get('/api/quick-calc-save?year=2026&month=9').then(data=>data.qty_data?.['1_0,1']===42)`);
+  assert.deepEqual((await savedQc(9)).row_meta['1_0'],{orderNo:'000123',orderQty:100},'订单核对信息保存到SQLite');
+  assert.equal(await cell('qcDeptTablesWrap',1,2),42,'已做数量自动同步');
   assert.equal((await savedQc(9)).dept_rows['1_0'][1],2.75,'单价写入实际数据库');
   assert.equal(await cell('qcDeptTablesWrap',1,qtyCol),42,'编辑中直接保存对数');
   await select('qcDeptTablesWrap',1,qtyCol);
@@ -98,6 +108,7 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await waitFor(`_qcLoadedPeriod?.month===10`);
   await delay(250);
   assert.equal((await savedQc(9)).qty_data['1_0,1'],88,'切月前数据保存到原月份');
+  assert.deepEqual(await evaluate('_qcState.rowMeta'),{},'新月份订单核对信息不串月');
   assert.equal(await cell('qcDeptTablesWrap',1,qtyCol),0,'新月份没有带入旧数据');
   assert.equal(Object.keys((await savedQc(10))?.qty_data||{}).length,0,'新月份数据库未被旧数据污染');
 
@@ -123,6 +134,9 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await delay(350);
   assert.equal(await cell('qcDeptTablesWrap',1,priceCol),2.75,'重启后恢复快捷计算单价');
   assert.equal(await cell('qcDeptTablesWrap',1,qtyCol),88,'重启后恢复快捷计算对数');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0).getRawValue()`),'000123','切月与重启后恢复订单号文本');
+  assert.equal(await cell('qcDeptTablesWrap',1,1),100,'重启恢复订单数量');
+  assert.equal(await cell('qcDeptTablesWrap',1,2),88,'重启自动计算已做数量');
   assert.equal(await evaluate(`document.querySelector('#view-quickcalc .lms-sheet-hint')`),null,'精简页面不含选格说明');
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('#view-quickcalc button')).some(button=>/添加行|添加一行|删除选中行/.test(button.textContent))`),false,'页面不含添加和删除行按钮');
   const layout = await evaluate(`(() => {const host=document.querySelector('#qcDeptTablesWrap .lms-sheet-host').getBoundingClientRect();return {top:host.top,bottom:host.bottom,height:host.height,viewport:innerHeight};})()`);

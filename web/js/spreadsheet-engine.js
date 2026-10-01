@@ -5,7 +5,7 @@
   const pendingRestore = new Map();
   const layoutCache = new Map();
   let workbookSequence = 0;
-  const inputSelector = 'input[data-emp], input.qc-price-input, input.qc-qty-input';
+  const inputSelector = 'input[data-emp], input.qc-price-input, input.qc-qty-input, input.qc-order-input, input.qc-order-qty-input';
   const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
   const notify = message => showToast(message, 'error');
 
@@ -28,7 +28,8 @@
     if (cell.closest('tr')?.dataset.qcUsed === 'false') return '';
     if (cell.dataset.sheetValue !== undefined) return Number(cell.dataset.sheetValue);
     const input = cell.querySelector(inputSelector);
-    if (input) return input.classList.contains('qc-price-input') || input.classList.contains('qc-qty-input')
+    if (input?.dataset.refField === 'orderNo') return input.value;
+    if (input) return input.classList.contains('qc-order-qty-input') || input.classList.contains('qc-price-input') || input.classList.contains('qc-qty-input')
       ? (input.value === '' ? '' : Number(input.value)) : Number(input.value || 0);
     const display = cell.querySelector('.wage-cell-display, .qc-price-display');
     const member = cell.querySelector('.member-list-name-color');
@@ -38,9 +39,9 @@
   }
 
   function qcRowStyle(cell, used, style = cell.baseStyle) {
-    const total = cell.td.classList.contains('row-total-display');
+    const total = cell.td.matches('.row-total-display, .qc-done-display');
     return { ...style,
-      bg: { rgb: !used ? '#ffffff' : total ? '#fef9c3' : cell.isPrice ? '#f0fdf4' : '#eff6ff' },
+      bg: { rgb: !used ? '#ffffff' : total ? '#fef9c3' : cell.isPrice ? '#f0fdf4' : cell.input?.dataset.refField ? '#f5f3ff' : '#eff6ff' },
       cl: { rgb: !used ? '#64748b' : total ? '#92400e' : cell.baseStyle.cl.rgb },
       ...(total ? { bl: used ? 1 : 0 } : {}),
     };
@@ -78,14 +79,15 @@
         if (input && Number(input.value) > 0) style.bg = { rgb: contentCss.backgroundColor };
         if (input?.classList.contains('qc-price-input') || td.querySelector('.wage-cell-display, .qc-price-display') || (total && table.classList.contains('wage-view'))) {
           style.n = { pattern: '#,##0.00' };
-        } else if (input || typeof textValue(td) === 'number') style.n = { pattern: '0' };
+        } else if (input?.dataset.refField === 'orderNo') style.n = { pattern: '@' };
+        else if (input || typeof textValue(td) === 'number') style.n = { pattern: '0' };
         const value = textValue(td);
-        const cell = { td, input, row: r, col: c, isPrice: td.classList.contains('qc-price-cell'), baseStyle: style };
+        const cell = { td, input, row: r, col: c, isPrice: td.classList.contains('qc-price-cell'), isOrder: input?.dataset.refField === 'orderNo', baseStyle: style };
         cellData[r][c] = { v: value, t: typeof value === 'number' ? 2 : 1,
           s: type === 'quick-calc' && tr.dataset.rowKey ? qcRowStyle(cell, tr.dataset.qcUsed === 'true') : style };
         cells.set(`${r},${c}`, cell);
         if (td.colSpan > 1) mergeData.push({ startRow: r, endRow: r, startColumn: c, endColumn: c + td.colSpan - 1 });
-        if (r === headerRows - 1) columnData[c] = { w: type === 'work-edit' && c === 0 ? 155 : type === 'work-edit' && c === 1 ? 120 : 92 };
+        if (r === headerRows - 1) columnData[c] = { w: type === 'work-edit' && c === 0 ? 155 : type === 'work-edit' && c === 1 ? 120 : type === 'quick-calc' && c === 0 ? 140 : 92 };
         c += td.colSpan;
       }
       columnCount = Math.max(columnCount, c);
@@ -132,10 +134,10 @@
       } else {
         const display = td.querySelector('.wage-cell-display, .qc-price-display');
         if (display) { display.textContent = ''; display.title = ''; }
-        if (td.classList.contains('row-total-display')) { td.textContent = ''; td.dataset.sheetValue = '0'; }
+        if (td.matches('.row-total-display, .qc-done-display')) { td.textContent = ''; td.dataset.sheetValue = '0'; }
       }
       const templateCell = meta.columnTemplates.get(c);
-      meta.cells.set(`${row},${c}`, { td, input, row, col: c, isPrice: td.classList.contains('qc-price-cell'),
+      meta.cells.set(`${row},${c}`, { td, input, row, col: c, isPrice: td.classList.contains('qc-price-cell'), isOrder: input?.dataset.refField === 'orderNo',
         baseStyle: templateCell.baseStyle, layoutKey: `${rowKey}|${meta.columnKeys[c] || c}` });
     }
     meta.table.tBodies[0].appendChild(tr);
@@ -166,6 +168,7 @@
   function validValue(cell, value) {
     if (value == null || value === '') return true;
     if (typeof value !== 'string' && typeof value !== 'number') return false;
+    if (cell.isOrder) return true;
     const raw = String(value).trim();
     return /^\d+(?:\.\d+)?$/.test(raw) && Number.isFinite(Number(raw)) &&
       (cell.isPrice || Number.isSafeInteger(Number(raw)));
@@ -349,6 +352,7 @@
   }
 
   function normalizeNumericValue(cell, value) {
+    if (cell.isOrder) return value == null ? value : String(value).trim();
     if (typeof value !== 'string') return value;
     const raw = value.replace(/[\u200b-\u200d\u2060\ufeff]/g, '').trim();
     const number = cell.isPrice ? raw.replace(/^[￥¥]\s*/, '') : raw;
@@ -502,7 +506,7 @@
         if (!used) Object.assign(patch, { v: null, t: 2, p: null });
         else if (movedStyles) {
           const value = textValue(cell.td);
-          Object.assign(patch, { v: value === '' ? null : value, t: 2, p: null });
+          Object.assign(patch, { v: value === '' ? null : value, t: typeof value === 'number' ? 2 : 1, p: null });
         }
         (cellValue[cell.row] ||= {})[cell.col] = patch;
       }
@@ -610,6 +614,8 @@
         }
         const proposedRows = new Map();
         for (const [r, columns] of Object.entries(event.params.cellValue || {})) {
+          const writesQcInputs = type === 'quick-calc' && Object.entries(columns || {}).some(([c, patch]) =>
+            getCell(meta, r, c)?.input && (patch === null || own(patch, 'v') || own(patch, 'f') || own(patch, 'p')));
           for (const [c, patch] of Object.entries(columns || {})) {
             const cell = getCell(meta, r, c);
             const writesValue = patch === null || own(patch, 'v') || own(patch, 'f') || own(patch, 'p');
@@ -621,6 +627,11 @@
               patch.s = { ...cell.baseStyle, ...targetStyle };
             }
             if (!cell?.input) {
+              // 整行复制包含统计列时，只写入业务输入，数量和合计由本行数据重新计算。
+              if (writesQcInputs && cell?.td.matches('.qc-done-display, .row-total-display')) {
+                delete columns[c];
+                continue;
+              }
               // 允许选中整条快捷计算数据行按 Delete，合计由业务计算更新。
               // 空白扩展列不保存，表头仍保持只读。
               if (type === 'quick-calc' && Number(r) >= meta.headerRows &&
@@ -631,30 +642,30 @@
               const same = patch && !patch.f && !patch.p && String(patch.v ?? '') === String(cell ? textValue(cell.td) : '');
               if (same) continue;
               event.cancel = true;
-              notify('请在对数或单价单元格中输入；表头与合计为只读');
+              notify('请在订单号、订单数量、对数或单价格中输入；表头与统计单元格为只读');
               return;
             }
             // 外部表格的富文本数字转成数值，消除源文本内部的字体与颜色。
             if (patch?.p && !patch.f) {
               const plain = normalizeNumericValue(cell, String(patch.p.body?.dataStream || ''));
-              if (validValue(cell, plain)) { patch.v = Number(plain || 0); patch.t = 2; patch.p = null; }
+              if (validValue(cell, plain)) { patch.v = cell.isOrder ? plain : Number(plain || 0); patch.t = cell.isOrder ? 1 : 2; patch.p = null; }
             }
             if (patch && !patch.p && !patch.f) patch.v = normalizeNumericValue(cell, patch.v);
             if (patch?.f || patch?.p || !validValue(cell, patch?.v)) {
               event.cancel = true;
-              notify('对数须为非负整数，单价须为非负数字');
+              notify('订单数量和对数须为非负整数，单价须为非负数字');
               return;
             }
             if (patch && patch.v != null && patch.v !== '') {
-              patch.v = Number(patch.v);
-              patch.t = 2;
+              patch.v = cell.isOrder ? String(patch.v) : Number(patch.v);
+              patch.t = cell.isOrder ? 1 : 2;
             }
             if (type === 'quick-calc') {
               const row = Number(r);
               if (!proposedRows.has(row)) proposedRows.set(row, new Map([...meta.columnTemplates.keys()]
                 .map(col => meta.cells.get(`${row},${col}`)).filter(item => item.input)
-                .map(item => [item.col, Number(item.input.value || 0)])));
-              proposedRows.get(row).set(Number(c), Number(patch?.v || 0));
+                .map(item => [item.col, item.isOrder ? Number(Boolean(item.input.value.trim())) : Number(item.input.value || 0)])));
+              proposedRows.get(row).set(Number(c), cell.isOrder ? Number(Boolean(String(patch?.v || '').trim())) : Number(patch?.v || 0));
             }
           }
         }
@@ -714,7 +725,7 @@
           const rowKey = tr.dataset.rowKey;
           for (const cell of meta.cells.values()) {
             if (cell.row !== row || !cell.input) continue;
-            cell.input.value = String((cell.isPrice ? _qcDeptRows[rowKey]?.[cell.input.dataset.subId] : _qcState.qtyData[cell.input.dataset.key]) || '');
+            cell.input.value = String((cell.input.dataset.refField ? _qcState.rowMeta[rowKey]?.[cell.input.dataset.refField] : cell.isPrice ? _qcDeptRows[rowKey]?.[cell.input.dataset.subId] : _qcState.qtyData[cell.input.dataset.key]) || '');
           }
           updateDeptRowTotals(rowKey);
         }

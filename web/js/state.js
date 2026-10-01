@@ -34,6 +34,7 @@ let _qcState = {
   employees: [],       // 所有员工（含 dept_id, sub_dept_id, dept_name, sub_dept_name）
   departments: [],     // 所有大部门
   subDepartments: [],  // 所有小部门（含 dept_id, dept_name）
+  rowMeta: {},         // "rowKey" -> { orderNo, orderQty }，仅用于订单核对
   qtyData: {},         // 对数："rowKey,empId" -> qty
   qcViewMode: 'qty',   // 'qty' | 'wage'
   qcWageDetail: null,
@@ -247,6 +248,7 @@ function pushHistory(type) {
       type: 'quick-calc',
       qcDeptRows: JSON.parse(JSON.stringify(_qcDeptRows)),
       qtyData: JSON.parse(JSON.stringify(_qcState.qtyData)),
+      rowMeta: JSON.parse(JSON.stringify(_qcState.rowMeta)),
       timestamp: Date.now()
     };
   }
@@ -285,6 +287,7 @@ async function undo() {
       type: 'quick-calc',
       qcDeptRows: JSON.parse(JSON.stringify(_qcDeptRows)),
       qtyData: JSON.parse(JSON.stringify(_qcState.qtyData)),
+      rowMeta: JSON.parse(JSON.stringify(_qcState.rowMeta)),
       timestamp: Date.now()
     };
   }
@@ -317,6 +320,7 @@ async function redo() {
       type: 'quick-calc',
       qcDeptRows: JSON.parse(JSON.stringify(_qcDeptRows)),
       qtyData: JSON.parse(JSON.stringify(_qcState.qtyData)),
+      rowMeta: JSON.parse(JSON.stringify(_qcState.rowMeta)),
       timestamp: Date.now()
     };
   }
@@ -344,6 +348,7 @@ async function restoreSnapshot(snapshot) {
     if (typeof _qcDeptRows !== 'undefined' && typeof renderQcDeptTables === 'function') {
       _qcDeptRows = JSON.parse(JSON.stringify(snapshot.qcDeptRows));
       _qcState.qtyData = JSON.parse(JSON.stringify(snapshot.qtyData));
+      _qcState.rowMeta = JSON.parse(JSON.stringify(snapshot.rowMeta || {}));
       renderQcDeptTables();
       // 撤销/重做后自动保存到数据库
       if (typeof autoSaveQc === 'function') {

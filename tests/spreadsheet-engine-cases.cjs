@@ -104,13 +104,14 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   await evaluate(`document.getElementById('spreadsheetWrap').style.display='none'; _currentView='quickcalc'; clearHistory(); renderQcDeptTables();`);
   await delay(400);
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getSheets().length`), 2, '部门工作表标签');
-  const qcPoint = await evaluate(`(() => {const i=LmsSpreadsheet.getInstance('qcDeptTablesWrap');const rect=i.book.getActiveSheet().getRange(1,1).getCellRect();const canvas=Array.from(document.querySelectorAll('#qcDeptTablesWrap canvas'),el=>el.getBoundingClientRect()).sort((a,b)=>b.width*b.height-a.width*a.height)[0];return {x:canvas.x+rect.x+rect.width/2,y:canvas.y+rect.y+rect.height/2};})()`);
+  for(let i=0;i<100 && !(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready && !document.querySelector('#qcDeptTablesWrap [data-u-comp="workbench-skeleton-shimmer"]')`));i++) await delay(100);
+  const qcPoint = await evaluate(`(() => {const i=LmsSpreadsheet.getInstance('qcDeptTablesWrap');const rect=i.book.getActiveSheet().getRange(1,4).getCellRect();const canvas=Array.from(document.querySelectorAll('#qcDeptTablesWrap canvas'),el=>el.getBoundingClientRect()).sort((a,b)=>b.width*b.height-a.width*a.height)[0];return {x:canvas.x+rect.x+rect.width/2,y:canvas.y+rect.y+rect.height/2};})()`);
   await mouse('mousePressed',qcPoint,{button:'left',buttons:1,clickCount:1});
   await mouse('mouseReleased',qcPoint,{button:'left',buttons:0,clickCount:1});
   await key('c',67,2);
   await delay(100);
   assert.equal((await evaluate('navigator.clipboard.readText()')).trim(),'5','切换页面后的真实复制');
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0))`);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3))`);
   await evaluate(`navigator.clipboard.write([new ClipboardItem({
     'text/plain':new Blob(['3.75\\t12\\t13'],{type:'text/plain'}),
     'text/html':new Blob(['<table><tr><td style="background-color:#abcdef"><font color="#123456">3.75</font></td><td>12</td><td>13</td></tr></table>'],{type:'text/html'})
@@ -118,31 +119,31 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   await key('v',86,2);
   await delay(100);
   assert.deepEqual(await evaluate(`[_qcDeptRows['1_0'][10],_qcState.qtyData['1_0,1'],_qcState.qtyData['1_0,2']]`), [3.75,12,13], '单价小数与两名员工写回');
-  assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3).getValue())`), 25, '快捷计算行合计');
+  assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,6).getValue())`), 25, '快捷计算行合计');
   await delay(550);
   assert.ok(await evaluate('saves.length > 0'), '接回原有自动保存');
   assert.equal(await evaluate(`document.querySelector('#qcDeptTablesWrap .lms-sheet-hint')`),null,'快捷计算不显示选格提示');
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('#qcDeptTablesWrap button')).some(button=>/添加行|添加一行|删除选中行/.test(button.textContent))`),false,'快捷计算不显示行管理按钮');
   // Excel/WPS HTML 剪贴板包含白底空格：重复粘贴相同值仍须刷新整行状态。
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0,2,3).setValues([[3.75,null,13],[2.5,7,null]])`);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3,2,3).setValues([[3.75,null,13],[2.5,7,null]])`);
   const sparseValues = [[3.75,'',13],[2.5,7,''],['','',6]];
   const sparseHtml = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><body><table>' + sparseValues.map(row=>'<tr>'+row.map(value=>`<td style="background-color:#ffffff;font-size:16pt">${value}</td>`).join('')+'</tr>').join('') + '</table></body></html>';
   const pasteSparse = async () => {
-    await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0))`);
+    await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3))`);
     await evaluate(`navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob([${JSON.stringify(sparseValues.map(row=>row.join('\t')).join('\n'))}],{type:'text/plain'}),'text/html':new Blob([${JSON.stringify(sparseHtml)}],{type:'text/html'})})])`);
     await key('v',86,2);
     await delay(150);
   };
   await pasteSparse();
   await pasteSparse();
-  assert.deepEqual(await evaluate(`(() => {const s=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet();return [1,2,3].map(r=>[0,1,2,3].map(c=>s.getRange(r,c).getCellStyleData().bg.rgb));})()`),Array.from({length:3},()=>['#f0fdf4','#eff6ff','#eff6ff','#fef9c3']),'稀疏XLSX粘贴和相同值重复粘贴后，有数据的整行包括空格保持在用样式');
+  assert.deepEqual(await evaluate(`(() => {const s=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet();return [1,2,3].map(r=>[3,4,5,6].map(c=>s.getRange(r,c).getCellStyleData().bg.rgb));})()`),Array.from({length:3},()=>['#f0fdf4','#eff6ff','#eff6ff','#fef9c3']),'稀疏XLSX粘贴和相同值重复粘贴后，有数据的整行包括空格保持在用样式');
   assert.equal(await evaluate(`isQcRowUsed('1_2') && _qcState.qtyData['1_2,2']===6`),true,'仅末列有值的新行也在用');
-  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,1).getCellStyleData().fs`),13,'粘贴不引入源字体字号');
-  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,1).getCellStyleData().fs`),13,'新增行的空格也使用本表字号');
-  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0).getCellStyleData().n.pattern`),'#,##0.00','单价保留本表小数格式');
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,0,1,3).setValues([[null,null,null]])`);
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0,2,3).setValues([[3.75,12,13],[2.5,7,8]])`);
-  const blankPoint = await evaluate(`(() => {const rect=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,1).getCellRect();const canvas=Array.from(document.querySelectorAll('#qcDeptTablesWrap canvas'),el=>el.getBoundingClientRect()).sort((a,b)=>b.width*b.height-a.width*a.height)[0];return {x:canvas.x+rect.x+rect.width/2,y:canvas.y+rect.y+rect.height/2};})()`);
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,4).getCellStyleData().fs`),13,'粘贴不引入源字体字号');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,4).getCellStyleData().fs`),13,'新增行的空格也使用本表字号');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3).getCellStyleData().n.pattern`),'#,##0.00','单价保留本表小数格式');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,3,1,3).setValues([[null,null,null]])`);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3,2,3).setValues([[3.75,12,13],[2.5,7,8]])`);
+  const blankPoint = await evaluate(`(() => {const rect=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,4).getCellRect();const canvas=Array.from(document.querySelectorAll('#qcDeptTablesWrap canvas'),el=>el.getBoundingClientRect()).sort((a,b)=>b.width*b.height-a.width*a.height)[0];return {x:canvas.x+rect.x+rect.width/2,y:canvas.y+rect.y+rect.height/2};})()`);
   await mouse('mousePressed',blankPoint,{button:'left',buttons:1,clickCount:1});
   await mouse('mouseReleased',blankPoint,{button:'left',buttons:0,clickCount:1});
   for (const digit of '24') {
@@ -152,30 +153,30 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   await key('Enter',13);
   await delay(100);
   assert.equal(await evaluate(`_qcState.qtyData['1_2,1']`),24,'原本未绑定的空白行可以直接键入');
-  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,1).getCellStyleData().bg.rgb`),'#eff6ff','输入后自动启用整行样式');
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,0))`);
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,4).getCellStyleData().bg.rgb`),'#eff6ff','输入后自动启用整行样式');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,3))`);
   await evaluate(`navigator.clipboard.writeText('1.5\\t24\\t25\\n2.5\\t4\\t5')`);
   await key('v',86,2);
   await delay(150);
   assert.deepEqual(await evaluate(`[_qcDeptRows['1_2'][10],_qcState.qtyData['1_2,2'],_qcDeptRows['1_3'][10],_qcState.qtyData['1_3,2']]`),[1.5,25,2.5,5],'多行粘贴自动启用空白行');
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,0,2,4))`);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,3,2,4))`);
   await key('Delete',46);
   await delay(100);
   assert.equal(await evaluate(`isQcRowUsed('1_2') || isQcRowUsed('1_3')`),false,'Delete清空后释放行数据');
-  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,1).getCellStyleData().bg.rgb`),'#ffffff','清空后恢复白色空白行');
-  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,3).getValue() ?? ''`),'','未用行的合计也保持空白');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,4).getCellStyleData().bg.rgb`),'#ffffff','清空后恢复白色空白行');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,6).getValue() ?? ''`),'','未用行的合计也保持空白');
   await evaluate('undo()');
   await delay(150);
   assert.equal(await evaluate(`_qcState.qtyData['1_3,2']`),5,'撤销恢复新启用行');
   await evaluate('redo()');
   await delay(150);
   assert.equal(await evaluate(`isQcRowUsed('1_3')`),false,'重做恢复空白行');
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(199,1).setValue(15)`);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(199,4).setValue(15)`);
   assert.equal(await evaluate(`isQcRowUsed('1_198')`),false,'跳过空行不能编辑');
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,1,197,1).setValues(Array.from({length:197},()=>[15]))`);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,4,197,1).setValues(Array.from({length:197},()=>[15]))`);
   assert.ok(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.save().sheets['dept-1'].rowCount`)>200,'录入到末尾时自动扩展空白行');
   assert.equal(await evaluate(`_qcState.qtyData['1_198,1']`),15,'新增末尾行映射正确');
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(200,0,1,2).setValues([[3.5,1.2]])`);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(200,3,1,2).setValues([[3.5,1.2]])`);
   assert.equal(await evaluate(`isQcRowUsed('1_199')`),false,'空白行非法粘贴整块拒绝且不启用');
   await evaluate(`_qcState.subDepartments.push({id:11,dept_id:1,name:'贴合'});_qcState.employees[1].sub_dept_id=11;_qcDeptRows={'1_0':{10:1.25,11:1.5}};_qcState.qtyData={'1_0,1':1};clearHistory();renderQcDeptTables()`);
   await delay(400);
@@ -184,24 +185,24 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   const moneyHtml = '<table>'+prices.map(row=>'<tr>'+row.map(value=>'<td style="font-size:24pt;background:#ff0000"><b>￥'+value.toFixed(2)+'&nbsp;</b></td>').join('')+'</tr>').join('')+'</table>';
   for (const html of [null,moneyHtml]) {
     const startRow = html ? 10 : 2;
-    await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(${startRow},0))`);
+    await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(${startRow},3))`);
     if(html) await evaluate(`navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob([${JSON.stringify(moneyText)}],{type:'text/plain'}),'text/html':new Blob([${JSON.stringify(html)}],{type:'text/html'})})])`);
     else await evaluate(`navigator.clipboard.writeText(${JSON.stringify(moneyText)})`);
     await key('v',86,2);
     await delay(150);
     assert.deepEqual(await evaluate(`Array.from({length:8},(_,i)=>[_qcDeptRows['1_'+(i+${startRow-1})]?.[10],_qcDeptRows['1_'+(i+${startRow-1})]?.[11]])`),prices,'直接对未使用行粘贴用户提供的人民币单价，无需激活，纯文本与富文本均支持');
-    assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(${startRow+7},1).getCellStyleData().fs`),13,'金额粘贴仍使用目标字号');
-    assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(${startRow+7},1).getCellStyleData().bg.rgb`),'#f0fdf4','金额粘贴仍使用单价列样式');
+    assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(${startRow+7},4).getCellStyleData().fs`),13,'金额粘贴仍使用目标字号');
+    assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(${startRow+7},4).getCellStyleData().bg.rgb`),'#f0fdf4','金额粘贴仍使用单价列样式');
   }
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0).setValue('¥ 1,234.50\u00a0')`);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3).setValue('¥ 1,234.50\u00a0')`);
   assert.equal(await evaluate(`_qcDeptRows['1_0'][10]`),1234.5,'半角人民币和规范千位分隔金额支持');
   for(const invalid of ['￥','￥-1.20','￥1,23.40','￥1.70元','=1+2']) {
-    await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0).setValue(${JSON.stringify(invalid)})`);
+    await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3).setValue(${JSON.stringify(invalid)})`);
     assert.equal(await evaluate(`_qcDeptRows['1_0'][10]`),1234.5,'错误金额与公式不会被误清洗成数字');
   }
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,2).setValue('￥1.70')`);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,5).setValue('￥1.70')`);
   assert.equal(await evaluate(`_qcState.qtyData['1_0,1']`),1,'金额不误写入员工对数');
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(18,0));navigator.clipboard.writeText(Array.from({length:500},()=>'￥0.80\\t￥0.90').join('\\n'))`);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(18,3));navigator.clipboard.writeText(Array.from({length:500},()=>'￥0.80\\t￥0.90').join('\\n'))`);
   await key('v',86,2);
   await delay(300);
   assert.equal(await evaluate(`getQcUsedRowCount(1)`),517,'500行一次粘贴到未使用行，无需逐行激活');
@@ -213,5 +214,45 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   await evaluate('redo()');
   await delay(200);
   assert.equal(await evaluate(`getQcUsedRowCount(1)`),517,'大量粘贴可一次重做');
-  console.log('PASS: 引擎复制粘贴、人民币单价/NBSP/目标样式、空白行直接录入/自动样式/清空/撤销重做/扩展、数值校验及自动保存');
+  // 新增前三列独立保存核对信息，已做数量始终汇总人员对数。
+  await evaluate(`_qcDeptRows={};_qcState.qtyData={};_qcState.rowMeta={};clearHistory();renderQcDeptTables()`);
+  await delay(250);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0));navigator.clipboard.writeText('000123\\t50\\nA-002\\t60')`);
+  await key('v',86,2);
+  await delay(150);
+  assert.deepEqual(await evaluate(`_qcState.rowMeta`),{'1_0':{orderNo:'000123',orderQty:50},'1_1':{orderNo:'A-002',orderQty:60}},'订单号文本前导零与订单数量可直接粘贴启用新行');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0).getRawValue()`),'000123','画面保留订单号前导零');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0));navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob(['000456\\t70'],{type:'text/plain'}),'text/html':new Blob(['<table><tr><td style="font-size:24pt"><b>000456</b></td><td>70</td></tr></table>'],{type:'text/html'})})])`);
+  await key('v',86,2);
+  await delay(150);
+  assert.deepEqual(await evaluate(`_qcState.rowMeta['1_0']`),{orderNo:'000456',orderQty:70},'富文本XLSX订单号保留前导零');
+  await evaluate('undo()');
+  await delay(150);
+
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,5,1,2).setValues([[12,13]])`);
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,2).getRawValue()`),25,'已做数量汇总所有人员对数');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0,1,8))`);
+  await key('c',67,2);
+  await delay(100);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,0))`);
+  await key('v',86,2);
+  await delay(150);
+  assert.deepEqual(await evaluate(`_qcState.rowMeta['1_2']`),{orderNo:'000123',orderQty:50},'包含只读统计列的整行复制仍可粘贴到未使用行');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,2).getRawValue()`),25,'整行粘贴自动重新计算已做数量');
+  await evaluate('undo()');
+  await delay(150);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,2).setValue(999)`);
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,2).getRawValue()`),25,'已做数量只读');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(2,1).setValue(1.5)`);
+  assert.equal(await evaluate(`_qcState.rowMeta['1_1'].orderQty`),60,'订单数量不接受小数');
+  await evaluate(`_qcState.qcViewMode='wage';renderQcDeptTables()`);
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,2).getRawValue()`),25,'工资视角已做数量仍是数量');
+  await evaluate(`_qcState.qcViewMode='qty';renderQcDeptTables();clearHistory();void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0,1,8).setValues([[null,null,null,null,null,null,null,null]])`);
+  assert.deepEqual(await evaluate(`_qcState.rowMeta`),{'1_0':{orderNo:'A-002',orderQty:60}},'清空整行后订单信息跟随后续行上移');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0).getRawValue()`),'A-002','上移后的画面仍是文本订单号');
+  await evaluate('undo()');
+  assert.equal(await evaluate(`_qcState.rowMeta['1_0'].orderNo`),'000123','撤销恢复订单核对信息');
+  await evaluate('redo()');
+  assert.equal(await evaluate(`_qcState.rowMeta['1_0'].orderNo`),'A-002','重做恢复收拢后的核对信息');
+  console.log('PASS: 订单核对列/文本前导零/已做数量/工资视角/收拢及历史，引擎复制粘贴、人民币单价/NBSP/目标样式、空白行直接录入/自动样式/清空/撤销重做/扩展、数值校验及自动保存');
 };
