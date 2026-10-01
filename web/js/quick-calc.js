@@ -7,25 +7,36 @@ let qcColumnDraggingDeptId = 0;
 let _qcLoadedPeriod = null;
 let _qcSaveQueue = Promise.resolve();
 
-// 空白行只属于电子表格视图；订单核对信息、单价或对数均可启用行。
+// 显式录入的 0 是有效值，只有 null、undefined 或空白文本表示未填写。
+function hasQcValue(value) {
+  return value != null && String(value).trim() !== '';
+}
+
+function isQcNumericValue(value) {
+  return hasQcValue(value) && Number.isFinite(Number(value)) && Number(value) >= 0;
+}
+
+// 空白行只属于电子表格视图；订单核对信息、单价或对数（包括 0）均可启用行。
 function isQcRowUsed(rowKey) {
   const meta = _qcState.rowMeta[rowKey];
-  return Boolean(meta?.orderNo?.trim() || Number(meta?.orderQty) > 0) ||
-    Object.values(_qcDeptRows[rowKey] || {}).some(value => Number(value) > 0) ||
-    Object.entries(_qcState.qtyData).some(([key, value]) => key.startsWith(rowKey + ',') && Number(value) > 0);
+  return hasQcValue(meta?.orderNo) || isQcNumericValue(meta?.orderQty) ||
+    Object.values(_qcDeptRows[rowKey] || {}).some(isQcNumericValue) ||
+    Object.entries(_qcState.qtyData).some(([key, value]) => key.startsWith(rowKey + ',') && isQcNumericValue(value));
 }
 
 function normalizeQcRows() {
   for (const [rowKey, meta] of Object.entries(_qcState.rowMeta)) {
-    if (meta.orderNo?.trim() || Number(meta.orderQty) > 0) _qcDeptRows[rowKey] ||= {};
+    if (!hasQcValue(meta.orderNo)) delete meta.orderNo;
+    if (!isQcNumericValue(meta.orderQty)) delete meta.orderQty;
+    if (Object.keys(meta).length) _qcDeptRows[rowKey] ||= {};
     else delete _qcState.rowMeta[rowKey];
   }
   for (const [key, value] of Object.entries(_qcState.qtyData)) {
-    if (Number(value) > 0) _qcDeptRows[key.split(',')[0]] ||= {};
+    if (isQcNumericValue(value)) _qcDeptRows[key.split(',')[0]] ||= {};
     else delete _qcState.qtyData[key];
   }
   for (const [rowKey, row] of Object.entries(_qcDeptRows)) {
-    for (const [subId, price] of Object.entries(row)) if (!(Number(price) > 0)) delete row[subId];
+    for (const [subId, price] of Object.entries(row)) if (!isQcNumericValue(price)) delete row[subId];
     if (!isQcRowUsed(rowKey)) delete _qcDeptRows[rowKey];
   }
 }
@@ -206,7 +217,7 @@ function renderQcDeptTables() {
           rowTotal += isWage ? roundNumber(qty * empSubPrice) : qty;
         }
         rowTotal = isWage ? roundNumber(rowTotal) : rowTotal;
-        const rowDisplay = isWage ? (rowTotal > 0 ? fmtCompact(rowTotal) : '') : rowTotal;
+        const rowDisplay = isWage ? (isQcRowUsed(rowKey) ? fmtCompact(rowTotal) : '') : rowTotal;
         const rowCompact = String(rowDisplay).length > 8 ? ' compact' : '';
 
         html += `<tr data-row-key="${escHtml(rowKey)}" data-qc-used="${isQcRowUsed(rowKey)}">`;
@@ -219,23 +230,23 @@ function renderQcDeptTables() {
         </td>`;
         html += `<td class="qc-reference-cell" style="background:#f5f3ff;color:#5b21b6">
           <input type="number" min="0" step="1" class="cell-input qc-order-qty-input" data-row-key="${escHtml(rowKey)}"
-            data-ref-field="orderQty" value="${reference.orderQty || ''}" oninput="onQcReferenceInput(this)">
+            data-ref-field="orderQty" value="${reference.orderQty ?? ''}" oninput="onQcReferenceInput(this)">
         </td>`;
         html += `<td class="qc-done-display" data-sheet-value="${doneQty}"
           style="background:#fef9c3;color:#92400e;font-weight:700;text-align:center">${doneQty}</td>`;
 
         // 各小部门单价列（纯手动输入）
         for (const sub of deptSubs) {
-          const priceVal = row[sub.id] || 0;
+          const priceVal = row[sub.id] ?? '';
           if (isWage) {
             html += `<td class="qc-price-cell" style="text-align:center;background:#f0fdf4;">
-              <div class="cell-input qc-price-display" title="￥${priceVal.toFixed(2)}">￥${priceVal.toFixed(2)}</div>
+              <div class="cell-input qc-price-display" title="${priceVal === '' ? '' : '￥' + Number(priceVal).toFixed(2)}">${priceVal === '' ? '' : '￥' + Number(priceVal).toFixed(2)}</div>
             </td>`;
           } else {
             html += `<td class="qc-price-cell" style="text-align:center;background:#f0fdf4;">
               <input type="number" min="0" step="0.01" class="cell-input qc-price-input"
                 style="width:65px;text-align:center;"
-                value="${priceVal || ''}" placeholder="0"
+                value="${priceVal}" placeholder="0"
                 data-row-key="${escHtml(rowKey)}" data-sub-id="${sub.id}"
                 onfocus="onQcCellFocus(this, 'price')"
                 onblur="onQcCellBlur(this, 'price')"
@@ -253,21 +264,21 @@ function renderQcDeptTables() {
           const wage = roundNumber(qty * empSubPrice);
 
           if (isWage) {
-            const displayVal = qty > 0 ? fmtCompact(wage) : '';
+            const displayVal = hasQcValue(_qcState.qtyData[qtyKey]) ? fmtCompact(wage) : '';
             const compactClass = String(displayVal).length > 6 ? ' compact' : '';
             html += `<td class="emp-cell">
               <div class="cell-input wage-cell-display${compactClass}"
                 data-key="${qtyKey}"
-                title="${qty > 0 ? '¥' + fmt(wage) : ''}">${displayVal}</div>
+                title="${hasQcValue(_qcState.qtyData[qtyKey]) ? '¥' + fmt(wage) : ''}">${displayVal}</div>
             </td>`;
           } else {
-            // 非0值 → 浅蓝色；0值或空值 → 默认颜色
-            const hasQty = qty > 0;
+            // 已填写（含0）浅蓝色，空值保持空白。
+            const hasQty = hasQcValue(_qcState.qtyData[qtyKey]);
             const bgStyle = hasQty ? 'background:#bfdbfe;' : '';
             html += `<td class="emp-cell" style="text-align:center;">
               <input type="number" min="0" class="cell-input qc-qty-input"
                 style="width:65px;text-align:center;${bgStyle}"
-                value="${qty || ''}" placeholder="0"
+                value="${_qcState.qtyData[qtyKey] ?? ''}" placeholder="0"
                 data-key="${qtyKey}"
                 data-row-key="${escHtml(rowKey)}"
                 data-emp-id="${emp.id}"
@@ -372,7 +383,7 @@ function onQcCellFocus(el, type) {
   if (type === 'price') {
     const rowKey = el.dataset.rowKey;
     const subId = parseInt(el.dataset.subId);
-    const currentVal = _qcDeptRows[rowKey]?.[subId] || 0;
+    const currentVal = _qcDeptRows[rowKey]?.[subId] ?? null;
     
     _editSession = {
       type: 'quick-calc-price',
@@ -382,7 +393,7 @@ function onQcCellFocus(el, type) {
     };
   } else if (type === 'qty') {
     const qtyKey = el.dataset.key;
-    const currentVal = _qcState.qtyData[qtyKey] || 0;
+    const currentVal = _qcState.qtyData[qtyKey] ?? null;
     
     _editSession = {
       type: 'quick-calc-qty',
@@ -391,16 +402,12 @@ function onQcCellFocus(el, type) {
     };
   }
   
-  // 如果值为0或空，清空输入框方便输入
-  if (el.value === '0' || el.value === '') {
-    el.value = '';
-  }
 }
 
 // ---- 单元格失去焦点 ----
 function onQcCellBlur(el, type) {
   const rawVal = el.value.trim();
-  const val = rawVal === '' ? 0 : ((type === 'price' ? parseFloat(rawVal) : parseInt(rawVal)) || 0);
+  const val = rawVal === '' ? null : ((type === 'price' ? parseFloat(rawVal) : parseInt(rawVal)) || 0);
   
   // 检查值是否变化，变化才保存历史（按单元格撤销）
   let hasChanged = false;
@@ -427,10 +434,7 @@ function onQcCellBlur(el, type) {
   
   _editSession = null;
   
-  // 如果值为0，显示0
-  if (val === 0) {
-    el.value = '0';
-  }
+  el.value = val == null ? '' : String(val);
 
   // 值变化时触发自动保存
   if (hasChanged) {
@@ -443,9 +447,10 @@ function onQcCellBlur(el, type) {
 function onQcReferenceInput(el) {
   const rowKey = el.dataset.rowKey;
   const field = el.dataset.refField;
-  const value = field === 'orderNo' ? el.value.trim() : (Number(el.value) || 0);
+  const raw = el.value.trim();
+  const value = raw === '' ? null : field === 'orderNo' ? raw : Number(raw);
   const meta = _qcState.rowMeta[rowKey] ||= {};
-  if (value) meta[field] = value;
+  if (value != null) meta[field] = value;
   else delete meta[field];
   if (!Object.keys(meta).length) delete _qcState.rowMeta[rowKey];
   _qcDeptRows[rowKey] ||= {};
@@ -458,12 +463,12 @@ function onQcReferenceInput(el) {
 function onQcPriceInput(el) {
   const rowKey = el.dataset.rowKey;
   const subId = parseInt(el.dataset.subId);
-  const val = parseFloat(el.value) || 0;
+  const val = el.value.trim() === '' ? null : Number(el.value);
 
   _qcDeptRows[rowKey] ||= {};
 
   // 实时更新显示，但不保存历史
-  if (val === 0) {
+  if (val == null) {
     delete _qcDeptRows[rowKey][subId];
     el.style.background = '';
   } else {
@@ -558,17 +563,17 @@ function onQcPriceTab(e, el) {
 function onQcQtyInput(el) {
   const key = el.dataset.key;
   if (!key) return;
-  const val = parseInt(el.value) || 0;
+  const val = el.value.trim() === '' ? null : Number(el.value);
   const rowKey = el.dataset.rowKey;
 
   // 实时更新显示，但不保存历史
-  if (val === 0) {
+  if (val == null) {
     delete _qcState.qtyData[key];
-    el.style.background = '';  // 0值恢复默认颜色
+    el.style.background = '';  // 真正清空时移除填写状态
   } else {
     _qcState.qtyData[key] = val;
     _qcDeptRows[rowKey] ||= {};
-    el.style.background = '#bfdbfe';  // 非0值浅蓝色（与做货编辑一致）
+    el.style.background = '#bfdbfe';  // 含0的已填写值均显示在用样式
   }
 
   updateDeptRowTotals(rowKey);
@@ -654,11 +659,11 @@ function updateDeptRowTotals(rowKey) {
     // 更新该成员的工资显示（工资视角下）
     if (isWage) {
       const wage = roundNumber(qty * empSubPrice);
-      const displayVal = qty > 0 ? fmtCompact(wage) : '';
+      const displayVal = hasQcValue(_qcState.qtyData[qtyKey]) ? fmtCompact(wage) : '';
       const allDisplays = document.querySelectorAll(`.wage-cell-display[data-key="${qtyKey}"]`);
       for (const d of allDisplays) {
         d.textContent = displayVal;
-        d.title = qty > 0 ? '¥' + fmt(wage) : '';
+        d.title = hasQcValue(_qcState.qtyData[qtyKey]) ? '¥' + fmt(wage) : '';
         d.className = `cell-input wage-cell-display${String(displayVal).length > 6 ? ' compact' : ''}`;
       }
     }
@@ -680,7 +685,7 @@ function updateDeptRowTotals(rowKey) {
         if (totalEl) {
           rowTotal = isWage ? roundNumber(rowTotal) : rowTotal;
           totalEl.dataset.sheetValue = String(rowTotal);
-          const rowDisplay = isWage ? (rowTotal > 0 ? fmtCompact(rowTotal) : '') : rowTotal;
+          const rowDisplay = isWage ? (isQcRowUsed(rowKey) ? fmtCompact(rowTotal) : '') : rowTotal;
           const rowCompact = String(rowDisplay).length > 8 ? ' compact' : '';
           totalEl.textContent = rowDisplay;
           totalEl.className = `row-total-display${isWage ? ' wage' : ''}${rowCompact}`;
@@ -754,11 +759,11 @@ function clearQcInputs() {
 // ---- 清空单价 ----
 function clearQcPrices() {
   pushHistory('quick-calc');
-  // 遍历所有行的单价，重置为0
+  // 清空单价时删除字段，不用0代替空值。
   for (const rowKey in _qcDeptRows) {
     const row = _qcDeptRows[rowKey];
     for (const subDeptId in row) {
-      row[subDeptId] = 0;
+      delete row[subDeptId];
     }
   }
   renderQcDeptTables();

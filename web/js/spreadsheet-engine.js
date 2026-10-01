@@ -6,6 +6,7 @@
   const layoutCache = new Map();
   let workbookSequence = 0;
   const inputSelector = 'input[data-emp], input.qc-price-input, input.qc-qty-input, input.qc-order-input, input.qc-order-qty-input';
+  const hasInputValue = value => value != null && String(value).trim() !== '';
   const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
   const notify = message => showToast(message, 'error');
   const columnKind = cell => cell?.td.dataset.empId ? 'employee' : cell?.td.dataset.priceId ? 'price' : null;
@@ -664,7 +665,7 @@
             // 外部表格的富文本数字转成数值，消除源文本内部的字体与颜色。
             if (patch?.p && !patch.f) {
               const plain = normalizeNumericValue(cell, String(patch.p.body?.dataStream || ''));
-              if (validValue(cell, plain)) { patch.v = cell.isOrder ? plain : Number(plain || 0); patch.t = cell.isOrder ? 1 : 2; patch.p = null; }
+              if (validValue(cell, plain)) { patch.v = cell.isOrder ? plain : plain === '' ? null : Number(plain); patch.t = cell.isOrder ? 1 : 2; patch.p = null; }
             }
             if (patch && !patch.p && !patch.f) patch.v = normalizeNumericValue(cell, patch.v);
             if (patch?.f || patch?.p || !validValue(cell, patch?.v)) {
@@ -680,8 +681,8 @@
               const row = Number(r);
               if (!proposedRows.has(row)) proposedRows.set(row, new Map([...meta.columnTemplates.keys()]
                 .map(col => meta.cells.get(`${row},${col}`)).filter(item => item.input)
-                .map(item => [item.col, item.isOrder ? Number(Boolean(item.input.value.trim())) : Number(item.input.value || 0)])));
-              proposedRows.get(row).set(Number(c), cell.isOrder ? Number(Boolean(String(patch?.v || '').trim())) : Number(patch?.v || 0));
+                .map(item => [item.col, hasInputValue(item.input.value)])));
+              proposedRows.get(row).set(Number(c), hasInputValue(patch?.v));
             }
           }
         }
@@ -690,7 +691,7 @@
           const lastRow = [...proposedRows.keys()].reduce((last, row) => Math.max(last, row), firstEmptyRow);
           // 每条新增行只检查一次，避免大块粘贴时反复遍历同一段前置行。
           for (let preceding = firstEmptyRow; preceding < lastRow; preceding++) {
-            if (![...(proposedRows.get(preceding)?.values() || [])].some(value => value > 0)) {
+            if (![...(proposedRows.get(preceding)?.values() || [])].some(Boolean)) {
               event.cancel = true;
               notify('请连续录入，不能跳过空白行粘贴或编辑');
               return;
@@ -741,7 +742,7 @@
           const rowKey = tr.dataset.rowKey;
           for (const cell of meta.cells.values()) {
             if (cell.row !== row || !cell.input) continue;
-            cell.input.value = String((cell.input.dataset.refField ? _qcState.rowMeta[rowKey]?.[cell.input.dataset.refField] : cell.isPrice ? _qcDeptRows[rowKey]?.[cell.input.dataset.subId] : _qcState.qtyData[cell.input.dataset.key]) || '');
+            cell.input.value = String((cell.input.dataset.refField ? _qcState.rowMeta[rowKey]?.[cell.input.dataset.refField] : cell.isPrice ? _qcDeptRows[rowKey]?.[cell.input.dataset.subId] : _qcState.qtyData[cell.input.dataset.key]) ?? '');
           }
           updateDeptRowTotals(rowKey);
         }
