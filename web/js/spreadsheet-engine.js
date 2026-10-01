@@ -306,6 +306,99 @@
     for (const instance of instances.values()) instance.refreshSpotlight?.();
   }
 
+  function attachCellSearch(instance) {
+    const page = instance.type === 'quick-calc' ? 'quickcalc' : 'work';
+    const sync = document.getElementById(`memberOrderSync_${page}`);
+    if (!sync) return;
+    let element = document.getElementById(`sheetSearch_${page}`);
+    if (!element) {
+      element = document.createElement('div');
+      element.id = `sheetSearch_${page}`;
+      element.className = 'sheet-cell-search';
+      element.innerHTML = `<input type="search" placeholder="搜索单元格 · Ctrl+F" aria-label="搜索单元格" title="搜索当前工作簿的所有工作表，Enter下一个，Shift+Enter上一个" autocomplete="off">
+        <span class="sheet-search-count" role="status" aria-live="polite"></span>
+        <button type="button" aria-label="上一个匹配单元格" title="上一个（Shift+Enter）">‹</button>
+        <button type="button" aria-label="下一个匹配单元格" title="下一个（Enter）">›</button>`;
+    }
+    sync.after(element);
+    const input = element.querySelector('input'), count = element.querySelector('.sheet-search-count');
+    const [previous, next] = element.querySelectorAll('button');
+    let query = '', matches = [], index = -1, dirty = true, timer = null, revision = 0, disposed = false;
+    const normalize = text => String(text ?? '').trim().toLocaleLowerCase('zh-CN');
+    const updateCount = () => {
+      count.textContent = query ? matches.length ? `${index + 1}/${matches.length}` : '无结果' : '';
+      previous.disabled = next.disabled = !matches.length;
+    };
+    const collect = () => {
+      query = normalize(input.value); matches = []; index = -1; dirty = false;
+      if (!query) { updateCount(); return; }
+      const snapshot = instance.book.save(), activeId = instance.book.getActiveSheet().getSheetId();
+      const ids = [activeId, ...snapshot.sheetOrder.filter(id => id !== activeId)];
+      for (const id of ids) {
+        const meta = instance.sheets.get(id), sheet = instance.book.getSheetBySheetId(id);
+        for (const [r, cells] of Object.entries(snapshot.sheets[id].cellData || {})) {
+          // 未使用行的统计零仅为占位，不作为可见内容参与搜索。
+          if (instance.type === 'quick-calc' && Number(r) >= meta.headerRows && meta.rows.get(Number(r))?.dataset.qcUsed === 'false') continue;
+          for (const [c, cell] of Object.entries(cells)) {
+            const raw = cell.v ?? cell.p?.body?.dataStream;
+            if (!hasInputValue(raw)) continue;
+            const displayed = sheet.getRange(Number(r), Number(c)).getValue();
+            if (normalize(raw).includes(query) || normalize(displayed).includes(query)) matches.push({ sheetId: id, row: Number(r), column: Number(c) });
+          }
+        }
+      }
+      updateCount();
+    };
+    const find = async (direction = 1, first = false) => {
+      clearTimeout(timer);
+      const request = ++revision;
+      try {
+        if (instance.book.isCellEditing()) await instance.book.endEditingAsync(true);
+        if (disposed || request !== revision) return;
+        if (dirty || query !== normalize(input.value)) { collect(); first = true; }
+        if (!matches.length) return;
+        index = first ? direction > 0 ? 0 : matches.length - 1 : (index + direction + matches.length) % matches.length;
+        const match = matches[index], sheet = instance.book.setActiveSheet(match.sheetId);
+        sheet.setActiveRange(sheet.getRange(match.row, match.column));
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        if (disposed || request !== revision) return;
+        sheet.scrollToCell(match.row, match.column, 0);
+        updateCount();
+        input.focus({ preventScroll: true });
+      } catch (error) { if (!disposed) notify(error.message || '搜索定位失败'); }
+    };
+    input.oninput = () => {
+      ++revision; clearTimeout(timer);
+      timer = setTimeout(() => { void find(1, true); }, 180);
+    };
+    input.onkeydown = event => {
+      // 输入框使用自身的文本编辑快捷键，避免触发表格的撤销/重做。
+      event.stopPropagation();
+      if (event.isComposing) return;
+      if (event.key === 'Enter') { event.preventDefault(); void find(event.shiftKey ? -1 : 1); }
+      else if (event.key === 'Escape') {
+        event.preventDefault(); ++revision; clearTimeout(timer); input.value = ''; collect();
+        instance.host.querySelector('[data-u-comp="editor"][contenteditable="true"]')?.focus({ preventScroll: true });
+      }
+    };
+    previous.onclick = () => { void find(-1); };
+    next.onclick = () => { void find(1); };
+    instance.searchElement = element;
+    instance.focusSearch = async () => {
+      if (instance.book.isCellEditing()) await instance.book.endEditingAsync(true);
+      if (!disposed) { input.focus({ preventScroll: true }); input.select(); }
+    };
+    instance.disposables.push(instance.api.addEvent(instance.api.Event.SheetValueChanged, () => {
+      dirty = true;
+      if (query) { count.textContent = '待搜索'; previous.disabled = next.disabled = false; }
+    }));
+    instance.disposables.push({ dispose() {
+      disposed = true; ++revision; clearTimeout(timer);
+      input.oninput = input.onkeydown = previous.onclick = next.onclick = null;
+    } });
+    collect();
+  }
+
   function attachSpotlight(instance) {
     const { api, book } = instance;
     let highlight = null;
@@ -1057,6 +1150,7 @@
     if (inputCell) book.getActiveSheet().setActiveRange(book.getActiveSheet().getRange(inputCell.row, inputCell.col));
     updateActions();
     instance.ready = true;
+    attachCellSearch(instance);
   }
 
   async function flush(type) {
@@ -1084,6 +1178,10 @@
   window.addEventListener('keydown', event => {
     const instance = current();
     if (!instance) return;
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'f' && instance.focusSearch) {
+      event.preventDefault(); event.stopImmediatePropagation(); void instance.focusSearch(); return;
+    }
+    if (instance.searchElement?.contains(event.target)) return;
     if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !event.isComposing &&
       ['Backspace', 'Delete'].includes(event.key) && instance.host.contains(event.target) &&
       event.target.closest('[data-u-comp="editor"]')) {
