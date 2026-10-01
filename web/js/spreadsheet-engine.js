@@ -196,6 +196,43 @@
     return [...instances.values()].find(instance => instance.wrap.offsetParent !== null);
   }
 
+  function clearSelectedCells(instance, event) {
+    if (instance.pendingClear) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return true;
+    }
+    const sheet = instance.book.getActiveSheet();
+    const ranges = sheet.getSelection()?.getActiveRangeList().map(range => ({ ...range.getRange() })) || [];
+    if (!ranges.length) return false;
+    const multiple = ranges.length > 1 || ranges.some(range => range.startRow !== range.endRow || range.startColumn !== range.endColumn);
+    // 单格正在编辑时，Backspace/Delete 保留文本编辑器的逐字删除行为。
+    if (instance.book.isCellEditing() && !multiple) return false;
+    const meta = instance.sheets.get(sheet.getSheetId());
+    const contains = cell => ranges.some(range => cell.row >= range.startRow && cell.row <= range.endRow &&
+      cell.col >= range.startColumn && cell.col <= range.endColumn);
+    if (!meta || ![...meta.cells.values()].some(cell => cell.input && contains(cell))) return false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    instance.pendingClear = (async () => {
+      // 先提交当前编辑值，再保存整块删除的历史；撤销可恢复删除前的完整内容。
+      if (instance.book.isCellEditing()) await instance.book.endEditingAsync(true);
+      if (instances.get(instance.wrap) !== instance || instance.book.getActiveSheet().getSheetId() !== meta.id) return;
+      const cellValue = {};
+      for (const cell of meta.cells.values()) {
+        if (!cell.input || !contains(cell)) continue;
+        const value = sheet.getRange(cell.row, cell.col).getRawValue();
+        if (!hasInputValue(value)) continue;
+        (cellValue[cell.row] ||= {})[cell.col] = { v: null, p: null, f: null, si: null };
+      }
+      // 一次写入整个选区，业务统计/行收拢/历史记录也只执行一次。
+      if (Object.keys(cellValue).length) instance.api.syncExecuteCommand('sheet.mutation.set-range-values', {
+        unitId: instance.book.getId(), subUnitId: meta.id, cellValue,
+      });
+    })().catch(error => notify(error.message || '清空选区失败')).finally(() => { instance.pendingClear = null; });
+    return true;
+  }
+
   function capture(type) {
     const instance = [...instances.values()].find(item => item.type === type);
     return instance ? { data: JSON.parse(JSON.stringify(instance.book.save())), fingerprints: instance.fingerprints,
@@ -1046,12 +1083,19 @@
   // 引擎快捷键在 window 层监听，先在同一层接管统一撤销，避免执行两次。
   window.addEventListener('keydown', event => {
     const instance = current();
-    if (!instance || !(event.ctrlKey || event.metaKey)) return;
+    if (!instance) return;
+    if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !event.isComposing &&
+      ['Backspace', 'Delete'].includes(event.key) && instance.host.contains(event.target) &&
+      event.target.closest('[data-u-comp="editor"]')) {
+      if (clearSelectedCells(instance, event)) return;
+    }
+    if (!(event.ctrlKey || event.metaKey)) return;
     const key = event.key.toLowerCase();
     if (key === 'z' || key === 'y') {
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (key === 'y' || event.shiftKey) void redo(); else void undo();
+      const action = key === 'y' || event.shiftKey ? redo : undo;
+      if (instance.pendingClear) void instance.pendingClear.then(action); else void action();
     }
   }, true);
 })();
