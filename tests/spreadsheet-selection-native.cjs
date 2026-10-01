@@ -14,7 +14,8 @@ async function main() {
   const edge = process.env.EDGE_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
   const engineTest = process.argv.includes('--engine');
   const managementTest = process.argv.includes('--management');
-  const liveTest = process.argv.includes('--live') || managementTest;
+  const fontTest = process.argv.includes('--fonts');
+  const liveTest = process.argv.includes('--live') || managementTest || fontTest;
   let url = pathToFileURL(path.join(__dirname, engineTest ? 'spreadsheet-engine.html' : 'spreadsheet-selection.html')).href + '?manual=1';
   let browser, backend, stopBackend;
   let launchError;
@@ -125,7 +126,7 @@ async function main() {
         await stopBackend();
         await startBackend(apiPort);
       };
-      await require(managementTest ? './management-mode-cases.cjs' : './spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
+      await require(fontTest ? './font-settings-cases.cjs' : managementTest ? './management-mode-cases.cjs' : './spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
       return;
     }
     if (engineTest) {

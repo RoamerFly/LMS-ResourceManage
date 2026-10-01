@@ -13,6 +13,38 @@
   const canSwapColumns = (source, target) => columnKind(source) && columnKind(source) === columnKind(target) &&
     source.td.dataset.deptId === target.td.dataset.deptId;
 
+  function sheetFontSizes() {
+    const css = getComputedStyle(document.documentElement);
+    const scale = parseFloat(css.getPropertyValue('--font-scale')) || 1;
+    return { body: 13 * scale, header: 13 * scale };
+  }
+
+  function updateTypography() {
+    const sizes = sheetFontSizes();
+    for (const instance of instances.values()) {
+      const changed = ['body', 'header'].filter(key => instance.fontSizes[key] !== sizes[key]);
+      if (!changed.length) continue;
+      instance.syncing = true;
+      try {
+        for (const meta of instance.sheets.values()) {
+          const sheet = instance.book.getSheetBySheetId(meta.id);
+          for (const cell of meta.cells.values()) {
+            const group = cell.row < meta.headerRows ? 'header' : 'body';
+            if (!changed.includes(group)) continue;
+            cell.baseStyle.fs = sizes[group];
+          }
+          for (const group of changed) {
+            const firstRow = group === 'header' ? 0 : meta.headerRows;
+            const lastRow = group === 'header' ? meta.headerRows - 1 : Math.max(...meta.rows.keys());
+            if (lastRow >= firstRow) sheet.getRange(firstRow, 0, lastRow - firstRow + 1, meta.columnCount).setFontSize(sizes[group]);
+          }
+        }
+        instance.fontSizes = sizes;
+      } finally { instance.syncing = false; }
+      instance.saveLayout();
+    }
+  }
+
   function getLayoutKey(type, year, month, mode) {
     return `lms.sheet-layout.${type}.${year}.${month}.${mode}`;
   }
@@ -53,6 +85,7 @@
   }
 
   function makeSheet(table, index, type) {
+    const fontSizes = sheetFontSizes();
     const cellData = {};
     const cells = new Map();
     const rows = new Map();
@@ -74,7 +107,7 @@
         const contentCss = getComputedStyle(input || td.querySelector('.cell-input') || td);
         const total = td.matches('.row-total, .row-total-display');
         const style = {
-          ff: contentCss.fontFamily.split(',')[0].replace(/["']/g, '').trim(), fs: parseFloat(contentCss.fontSize) || 13, ht: 2, vt: 2,
+          ff: contentCss.fontFamily.split(',')[0].replace(/["']/g, '').trim(), fs: r < headerRows ? fontSizes.header : fontSizes.body, ht: 2, vt: 2,
           bl: td.tagName === 'TH' || total ? 1 : 0,
           cl: { rgb: css.color },
           bg: { rgb: css.backgroundColor === 'rgba(0, 0, 0, 0)' ? '#ffffff' : css.backgroundColor },
@@ -165,7 +198,8 @@
 
   function capture(type) {
     const instance = [...instances.values()].find(item => item.type === type);
-    return instance ? { data: JSON.parse(JSON.stringify(instance.book.save())), fingerprints: instance.fingerprints } : null;
+    return instance ? { data: JSON.parse(JSON.stringify(instance.book.save())), fingerprints: instance.fingerprints,
+      fontSizes: { ...instance.fontSizes } } : null;
   }
 
   function captureNavigation(type) {
@@ -436,6 +470,7 @@
     const tables = Array.from(wrap.querySelectorAll('table.spreadsheet'));
     if (!tables.length) return;
     const sheets = tables.map((table, index) => makeSheet(table, index, type));
+    const fontSizes = sheetFontSizes();
     const year = type === 'work-edit' ? _state.currentYear : document.getElementById('qcYear')?.value;
     const month = type === 'work-edit' ? _state.currentMonth : document.getElementById('qcMonth')?.value;
     const viewMode = type === 'work-edit' ? _state.viewMode : _qcState.qcViewMode;
@@ -449,7 +484,11 @@
       if (!layout) continue;
       for (const cell of sheet.cells.values()) {
         const savedStyle = layout.cellStyles?.[cell.layoutKey] || layout.cellStyles?.[cell.legacyLayoutKey];
-        if (savedStyle) sheet.data.cellData[cell.row][cell.col].s = savedStyle;
+        if (savedStyle) {
+          const group = cell.row < sheet.headerRows ? 'header' : 'body';
+          sheet.data.cellData[cell.row][cell.col].s = { ...savedStyle,
+            ...((layout.fontSizes?.[group] ?? 13) !== fontSizes[group] ? { fs: fontSizes[group] } : {}) };
+        }
         if (type === 'quick-calc' && cell.row >= sheet.headerRows) {
           sheet.data.cellData[cell.row][cell.col].s = qcRowStyle(cell, cell.td.closest('tr').dataset.qcUsed === 'true', sheet.data.cellData[cell.row][cell.col].s);
         }
@@ -498,7 +537,18 @@
     const fingerprints = Object.fromEntries(sheets.map(sheet => [sheet.id, sheet.fingerprint]));
     const restored = pendingRestore.get(type);
     pendingRestore.delete(type);
-    if (restored && JSON.stringify(restored.fingerprints) === JSON.stringify(fingerprints)) data = restored.data;
+    if (restored && JSON.stringify(restored.fingerprints) === JSON.stringify(fingerprints)) {
+      data = restored.data;
+      // 撤销数字、样式时保留全局字体缩放。
+      for (const meta of sheets) for (const [row, cells] of Object.entries(data.sheets[meta.id].cellData || {})) {
+        const group = Number(row) < meta.headerRows ? 'header' : 'body';
+        if ((restored.fontSizes?.[group] ?? 13) === fontSizes[group]) continue;
+        for (const cell of Object.values(cells)) {
+          const style = typeof cell.s === 'string' ? data.styles[cell.s] : cell.s;
+          cell.s = { ...style, fs: fontSizes[group] };
+        }
+      }
+    }
     // 每次换簿使用不同标识，防止上一轮编辑的异步命令写入新工作簿。
     data = { ...data, id: `lms-${type}-${++workbookSequence}` };
     const book = api.createWorkbook(data);
@@ -507,7 +557,7 @@
       sheet.data.columnCount = data.sheets[sheet.id].columnCount;
     }
     const instance = { wrap, type, univer, api, book, sheets: new Map(sheets.map(sheet => [sheet.id, sheet])),
-      fingerprints, source, bar, host, syncing: false, historyPending: false, disposables: [] };
+      fingerprints, fontSizes, source, bar, host, syncing: false, historyPending: false, disposables: [] };
     instances.set(wrap, instance);
     instance.saveLayout = () => {
       const snapshot = book.save();
@@ -520,7 +570,7 @@
           const resolved = typeof style === 'string' ? snapshot.styles[style] : style;
           if (resolved) cellStyles[cell.layoutKey] = resolved;
         }
-        layouts[meta.id] = { cellStyles, zoomRatio: sheet.zoomRatio,
+        layouts[meta.id] = { cellStyles, fontSizes: { ...instance.fontSizes }, zoomRatio: sheet.zoomRatio,
           columns: Object.fromEntries(Object.entries(meta.columnKeys).map(([c, key]) => [key, sheet.columnData?.[c]])),
           rows: Object.fromEntries([...meta.rows].map(([r, tr]) => [tr.dataset.rowKey, sheet.rowData?.[r]])) };
       }
@@ -921,7 +971,7 @@
     if (instance?.book.isCellEditing()) await instance.book.endEditingAsync(true);
   }
 
-  window.LmsSpreadsheet = { mount, dispose, capture, captureNavigation, restoreNavigation, loadLayout, flush,
+  window.LmsSpreadsheet = { mount, dispose, capture, captureNavigation, restoreNavigation, loadLayout, flush, updateTypography,
     prepareRestore(type, snapshot) { if (snapshot) pendingRestore.set(type, snapshot); },
     getInstance(wrapId) { return instances.get(document.getElementById(wrapId)); },
     focusInput(input) {

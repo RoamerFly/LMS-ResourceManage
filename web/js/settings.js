@@ -6,9 +6,8 @@ const DEFAULT_SETTINGS = {
   themeMode: 'light',
   radius: '8px',
   shadow: '0 2px 8px rgba(0,0,0,0.08)',
-  'fontSize-base': '13',
+  fontScale: '100',
   fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
-  'table-fontSize': '13',
   'table-rowHeight': '40',
   'table-zebra': false,
   'table-compact': false,
@@ -27,6 +26,8 @@ const DEFAULT_SETTINGS = {
 };
 
 const LEGACY_FONT_SETTING_KEYS = [
+  'fontSize-base',
+  'table-fontSize',
   'fontSize-title',
   'fontSize-h1',
   'fontSize-members',
@@ -161,10 +162,10 @@ function normalizeSettings(settings) {
   normalized.minimalMode = normalized.minimalMode === true || normalized.minimalMode === 'true';
   // 升级旧版默认的 220px 留白为自动适应文字；仍支持手动调整。
   if (!normalized['sidebar-width'] || String(normalized['sidebar-width']) === '220') normalized['sidebar-width'] = 'auto';
+  const legacySize = Number(normalized['fontSize-base']) || 13;
+  if (normalized.fontScale == null) normalized.fontScale = String(Math.round(legacySize / 13 * 100));
+  normalized.fontScale = String(Math.min(200, Math.max(75, Number(normalized.fontScale) || 100)));
   LEGACY_FONT_SETTING_KEYS.forEach(key => delete normalized[key]);
-  if (!normalized['fontSize-base']) {
-    normalized['fontSize-base'] = DEFAULT_SETTINGS['fontSize-base'];
-  }
   if (!normalized.themeMode) {
     normalized.themeMode = normalized.darkmode ? 'dark' : DEFAULT_SETTINGS.themeMode;
   }
@@ -237,7 +238,8 @@ async function loadSettings() {
           normalized[key] = dbSettings[key];  // 保留不带前缀的
         }
       }
-      _currentSettings = normalizeSettings({ ...DEFAULT_SETTINGS, ...normalized });
+      _currentSettings = normalizeSettings({ ...DEFAULT_SETTINGS, ...normalized,
+        fontScale: normalized.fontScale ?? String(Math.round((Number(normalized['fontSize-base']) || 13) / 13 * 100)) });
       // 同时更新 localStorage（保持一致性）
       localStorage.setItem('li_jie_hr_settings', JSON.stringify(_currentSettings));
       return;
@@ -251,7 +253,8 @@ async function loadSettings() {
     const saved = localStorage.getItem('li_jie_hr_settings');
     if (saved) {
       const parsed = JSON.parse(saved);
-      _currentSettings = normalizeSettings({ ...DEFAULT_SETTINGS, ...parsed });
+      _currentSettings = normalizeSettings({ ...DEFAULT_SETTINGS, ...parsed,
+        fontScale: parsed.fontScale ?? String(Math.round((Number(parsed['fontSize-base']) || 13) / 13 * 100)) });
     }
   } catch (e) {
     _currentSettings = { ...DEFAULT_SETTINGS };
@@ -291,12 +294,9 @@ function applySetting(key, value, skipSave = false) {
       // 直接设置字体族，font-family 值本身可以包含引号，无需再外套
       root.style.setProperty('--font-family', value);
       break;
-    case 'fontSize-base':
-      root.style.setProperty('--font-size-base', value + 'px');
-      break;
-    case 'table-fontSize':
-      root.style.setProperty('--table-font-size', value + 'px');
-      document.querySelectorAll('.settings-preview-table').forEach(t => t.style.fontSize = value + 'px');
+    case 'fontScale':
+      root.style.setProperty('--font-scale', Number(value) / 100);
+      window.LmsSpreadsheet?.updateTypography();
       break;
     case 'table-rowHeight':
       root.style.setProperty('--table-row-height', value + 'px');
@@ -309,10 +309,8 @@ function applySetting(key, value, skipSave = false) {
     case 'table-compact':
       if (value) {
         root.style.setProperty('--content-padding', '10px');
-        root.style.setProperty('--table-font-size', '11px');
       } else {
         root.style.setProperty('--content-padding', _currentSettings['content-padding'] + 'px');
-        root.style.setProperty('--table-font-size', _currentSettings['table-fontSize'] + 'px');
       }
       _toggleCompactLayoutLock(value);
       break;
@@ -370,7 +368,7 @@ function updateControlDisplay(key, value) {
 
 function updateSliderVal(key, value) {
   const valEl = document.getElementById('s-' + key + '-val');
-  if (valEl) valEl.textContent = value === 'auto' ? '适应文字' : value + 'px';
+  if (valEl) valEl.textContent = value === 'auto' ? '适应文字' : value + (key === 'fontScale' ? '%' : 'px');
 }
 
 // 双击滑块数值输入自定义值
@@ -395,7 +393,7 @@ function editSliderVal(key, el) {
     const max = parseInt(input.max);
     val = Math.max(min, Math.min(max, val));
     
-    el.textContent = val + 'px';
+    el.textContent = val + (key === 'fontScale' ? '%' : 'px');
     
     const slider = document.getElementById('s-' + key);
     if (slider) slider.value = val;
@@ -412,7 +410,7 @@ function editSliderVal(key, el) {
     if (e.key === 'Enter') {
       input.blur();
     } else if (e.key === 'Escape') {
-      el.textContent = currentVal + 'px';
+      el.textContent = currentVal + (key === 'fontScale' ? '%' : 'px');
       el.style.display = '';
     }
   };

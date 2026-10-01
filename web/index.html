@@ -364,11 +364,11 @@
               字体设置
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">基础字号</div><div class="settings-row-desc">除表格外的页面文字会按相同 px 差值同步增减（双击输入自定义值）</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">字体缩放</div><div class="settings-row-desc">界面、人员卡片、表格和工作表标签文字统一按比例缩放（双击数值可自定义）</div></div>
               <div class="settings-row-control">
                 <div class="slider-control">
-                  <input type="range" class="slider-input" id="s-fontSize-base" min="11" max="26" value="13" oninput="updateSliderVal('fontSize-base', this.value); applySetting('fontSize-base', this.value)">
-                  <span class="slider-value" id="s-fontSize-base-val" ondblclick="editSliderVal('fontSize-base', this)" title="双击输入自定义值">13px</span>
+                  <input type="range" class="slider-input" id="s-fontScale" min="75" max="200" step="1" value="100" oninput="updateSliderVal('fontScale', this.value); applySetting('fontScale', this.value)">
+                  <span class="slider-value" id="s-fontScale-val" ondblclick="editSliderVal('fontScale', this)" title="双击输入自定义值">100%</span>
                 </div>
               </div>
             </div>
@@ -428,12 +428,9 @@
               表格设置
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">表格字号</div><div class="settings-row-desc">表格内文字大小（双击输入框可自定义）</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">字体缩放</div><div class="settings-row-desc">与界面文字一起按比例缩放</div></div>
               <div class="settings-row-control">
-                <div class="slider-control">
-                  <input type="range" class="slider-input" id="s-table-fontSize" min="8" max="32" value="13" oninput="updateSliderVal('table-fontSize', this.value); applySetting('table-fontSize', this.value)">
-                  <span class="slider-value" id="s-table-fontSize-val" ondblclick="editSliderVal('table-fontSize', this)" title="双击输入自定义值">13px</span>
-                </div>
+                <button class="btn btn-secondary" onclick="document.querySelector('.settings-nav-item[data-settings=fonts]').click()">调整字体缩放</button>
               </div>
             </div>
             <div class="settings-row">

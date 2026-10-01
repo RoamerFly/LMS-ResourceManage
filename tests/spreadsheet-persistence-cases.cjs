@@ -41,10 +41,10 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   assert.ok(width>100 && width<180,`紧凑导航宽度 ${width}px`);
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('.sidebar .nav-item,.sidebar-logo'),el=>el.scrollWidth<=el.clientWidth).every(Boolean)`),true,'导航和标题完整显示');
   assert.equal(await evaluate(`get('/api/window/settings').then(result=>result.config.maximized)`),true,'API默认最大化');
-  await evaluate(`applySetting('fontSize-base','20',true)`);
+  await evaluate(`applySetting('fontScale','150',true)`);
   await delay(250);
   assert.ok(await evaluate(`document.querySelector('.sidebar').getBoundingClientRect().width`) > width,'字体放大后侧栏自适应');
-  await evaluate(`applySetting('fontSize-base','13',true)`);
+  await evaluate(`applySetting('fontScale','100',true)`);
   await delay(250);
 
   await click('.nav-item[data-view="work"]');
