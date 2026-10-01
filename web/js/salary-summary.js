@@ -68,15 +68,18 @@ async function loadSalary(options = {}) {
         <div class="salary-print-meta">生成时间：${printedAt}</div>
       </div>
       <div class="grand-total">
-        <span>全厂合计${sourceLabel ? ` <span class="qc-badge">${sourceLabel}</span>` : ''}</span>
-        <span>对数：<strong>${fmt(grandTotalPairs)}</strong> &nbsp;|&nbsp; 总工资：<strong>¥${fmt(grandTotalWage)}</strong></span>
+        <span class="salary-total-heading">全厂合计${sourceLabel ? ` <span class="qc-badge">${sourceLabel}</span>` : ''}</span>
+        <span class="salary-metrics">
+          <span class="salary-metric"><span class="salary-metric-label">做货对数</span><strong>${fmt(grandTotalPairs)}</strong></span>
+          <span class="salary-metric salary-metric-wage"><span class="salary-metric-label">总工资</span><strong>¥${fmt(grandTotalWage)}</strong></span>
+        </span>
       </div>`;
 
     displayData.forEach(dept => {
       html += `<div class="dept-block salary-dept-block" data-dept-id="${dept.dept_id}">
         <div class="dept-block-header">
           <span><span class="dept-large">${escHtml(dept.dept_name)}</span></span>
-          <span class="dept-totals">对数合计：${fmt(dept.total_pairs)} &nbsp;|&nbsp; 部门工资合计：¥${fmt(dept.total_wage)}</span>
+          <span class="dept-totals"><span>对数合计 <strong>${fmt(dept.total_pairs)}</strong></span><span>部门工资合计 <strong>¥${fmt(dept.total_wage)}</strong></span></span>
         </div>
         <div class="table-wrap"><table>
           <thead><tr><th>姓名</th><th>小部门</th><th class="text-right">做货对数</th><th class="text-right">做货工资</th><th class="text-right">人工增扣</th><th class="text-right">总工资</th></tr></thead>
@@ -87,8 +90,8 @@ async function loadSalary(options = {}) {
             <td><span class="dept-sub">${escHtml(emp.sub_dept_name)}</span></td>
             <td class="text-right table-num">${fmt(emp.pairs)}</td>
             <td class="text-right table-num">¥${fmt(emp.wage)}</td>
-            <td class="text-right table-num text-danger">¥${fmt(emp.adj_amount)}</td>
-            <td class="text-right table-num" style="font-weight:700;color:var(--success);">¥${fmt(emp.total)}</td>
+            <td class="text-right table-num salary-adjustment ${emp.adj_amount < 0 ? 'text-danger' : emp.adj_amount > 0 ? 'salary-adjustment-positive' : 'salary-adjustment-zero'}">¥${fmt(emp.adj_amount)}</td>
+            <td class="text-right table-num salary-wage-total">¥${fmt(emp.total)}</td>
           </tr>`).join('')}</tbody>
         </table></div>
       </div>`;
