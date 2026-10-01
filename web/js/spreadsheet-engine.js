@@ -314,8 +314,32 @@
         }
       } finally { instance.syncing = false; }
     };
+    // 只响应原地左键双击姓名，不把拖拽选区、Shift 扩选或键盘移格当作编辑人员。
+    let nameClickGesture = null;
+    const trackNamePointerDown = event => {
+      nameClickGesture = { x: event.clientX, y: event.clientY, moved: false,
+        allowed: event.button === 0 && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey };
+    };
+    const trackNamePointerMove = event => {
+      if (nameClickGesture && Math.hypot(event.clientX - nameClickGesture.x, event.clientY - nameClickGesture.y) > 4) nameClickGesture.moved = true;
+    };
+    host.addEventListener('pointerdown', trackNamePointerDown, true);
+    host.addEventListener('pointermove', trackNamePointerMove, true);
+    instance.disposables.push({ dispose() {
+      host.removeEventListener('pointerdown', trackNamePointerDown, true);
+      host.removeEventListener('pointermove', trackNamePointerMove, true);
+    } });
     listen(api.Event.BeforeSheetEditStart, event => {
       const meta = instance.sheets.get(event.worksheet.getSheetId());
+      const header = meta?.cells.get(`${event.row},${event.column}`)?.td;
+      // Univer 1.0.3 的 DeviceInputEventType.Dblclick 为 3；键盘/F2 不触发人员编辑。
+      if (event.eventType === 3 && event.row === meta?.headerRows - 1 && header?.dataset.empId &&
+        nameClickGesture?.allowed && !nameClickGesture.moved) {
+        event.cancel = true;
+        nameClickGesture = null;
+        void showEditMemberModal(Number(header.dataset.empId));
+        return;
+      }
       if (type === 'quick-calc' && event.row > meta.headerRows + getQcUsedRowCount(meta.id.replace('dept-', ''))) {
         event.cancel = true;
         notify('请先填写上一行，不能跳过空白行');
@@ -521,29 +545,6 @@
     };
     listen(api.Event.SelectionChanged, updateActions);
     listen(api.Event.ActiveSheetChanged, updateActions);
-    // 只响应原地左键点击姓名，不把拖拽选区、Shift 扩选或键盘移格当作编辑人员。
-    let nameClickGesture = null;
-    const trackNamePointerDown = event => {
-      nameClickGesture = { x: event.clientX, y: event.clientY, moved: false,
-        allowed: event.button === 0 && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey };
-    };
-    const trackNamePointerMove = event => {
-      if (nameClickGesture && Math.hypot(event.clientX - nameClickGesture.x, event.clientY - nameClickGesture.y) > 4) nameClickGesture.moved = true;
-    };
-    host.addEventListener('pointerdown', trackNamePointerDown, true);
-    host.addEventListener('pointermove', trackNamePointerMove, true);
-    instance.disposables.push({ dispose() {
-      host.removeEventListener('pointerdown', trackNamePointerDown, true);
-      host.removeEventListener('pointermove', trackNamePointerMove, true);
-    } });
-    listen(api.Event.CellClicked, event => {
-      if (!nameClickGesture?.allowed || nameClickGesture.moved) return;
-      const meta = instance.sheets.get(event.worksheet.getSheetId());
-      const header = meta?.cells.get(`${event.row},${event.column}`)?.td;
-      if (event.row !== meta?.headerRows - 1 || !header?.dataset.empId) return;
-      nameClickGesture = null;
-      void showEditMemberModal(Number(header.dataset.empId));
-    });
     instance.updateActions = updateActions;
     updateActions();
     // 鼠标点击工具栏前完成正在输入的数字。

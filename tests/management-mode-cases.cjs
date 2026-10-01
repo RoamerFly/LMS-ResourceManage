@@ -20,6 +20,14 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
     await mouse('mouseReleased',point,{button:'left',buttons:0,clickCount:1,modifiers});
     await delay(80);
   };
+  const cellDoubleClick = async (wrap,row,col) => {
+    const point=await cellPoint(wrap,row,col);
+    for (const clickCount of [1,2]) {
+      await mouse('mousePressed',point,{button:'left',buttons:1,clickCount});
+      await mouse('mouseReleased',point,{button:'left',buttons:0,clickCount});
+    }
+    await delay(80);
+  };
   const type = async text => {
     for (const char of text) {
       await call('Input.dispatchKeyEvent',{type:'keyDown',key:char,windowsVirtualKeyCode:char.charCodeAt(0),text:char});
@@ -88,13 +96,15 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await click('.nav-item[data-view="work"]');
   await waitFor(`LmsSpreadsheet.getInstance('spreadsheetWrap')?.ready`);
   await waitFor(`(() => {const instance=LmsSpreadsheet.getInstance('spreadsheetWrap');const sheet=instance.book.save().sheets.work;const rect=instance.book.getActiveSheet().getRange(2,2).getCellRect();return rect.x===sheet.rowHeader.width+sheet.columnData[0].w+sheet.columnData[1].w && rect.width===sheet.columnData[2].w;})()`);
+  await cellClick('spreadsheetWrap',1,2);
+  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'做货表头单击只选格');
   await cellClick('spreadsheetWrap',2,2);
   await waitFor(`document.activeElement?.getAttribute('data-u-comp')==='editor'`);
   await type('7');
   await waitFor(`LmsSpreadsheet.getInstance('spreadsheetWrap').book.isCellEditing()`);
-  await cellClick('spreadsheetWrap',1,2);
+  await cellDoubleClick('spreadsheetWrap',1,2);
   await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.querySelector('#modalBox .modal-title')?.textContent==='编辑人员'`);
-  assert.equal(await evaluate(`get('/api/work-records?year=2026&month=9').then(data=>data.records.find(row=>row.emp_id===1).quantity)`),7,'点击做货表头先提交并保存当前数字');
+  assert.equal(await evaluate(`get('/api/work-records?year=2026&month=9').then(data=>data.records.find(row=>row.emp_id===1).quantity)`),7,'双击做货表头先提交并保存当前数字');
   await evaluate(`document.getElementById('m-name').value='张三甲'`);
   await click('#modalBox button[onclick="doEditMember(1)"]');
   await waitFor(`LmsSpreadsheet.getInstance('spreadsheetWrap')?.book.getActiveSheet().getRange(1,2).getValue()==='张三甲'`);
@@ -129,8 +139,13 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await mouse('mouseReleased',to,{button:'left',buttons:0,clickCount:1});
   assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'拖选表头不误弹人员编辑');
   await cellClick('qcDeptTablesWrap',1,qtyCol);
-  await type('88');
   await cellClick('qcDeptTablesWrap',0,qtyCol);
+  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'快捷表头单击只选格');
+  await key('F2',113);
+  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'F2不打开人员编辑');
+  await cellClick('qcDeptTablesWrap',1,qtyCol);
+  await type('88');
+  await cellDoubleClick('qcDeptTablesWrap',0,qtyCol);
   await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.getElementById('m-name')?.value==='张三甲'`);
   await evaluate(`document.getElementById('m-name').value='张三乙'`);
   await click('#modalBox button[onclick="doEditMember(1)"]');
@@ -139,7 +154,7 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await evaluate('qcToggleViewMode()');
   await delay(400);
   const wageBook = await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getId()`);
-  await cellClick('qcDeptTablesWrap',0,qtyCol);
+  await cellDoubleClick('qcDeptTablesWrap',0,qtyCol);
   await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.getElementById('m-name')?.value==='张三乙'`);
   await screenshot('lms-spreadsheet-personnel-edit');
   await evaluate(`document.getElementById('m-gender').value='女'`);
@@ -184,5 +199,5 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await click('.nav-item[data-view="overview"]');
   await waitFor(`_currentView==='overview'`);
   assert.equal(await evaluate(`document.querySelector('.overview-card[data-view="departments"],.overview-card[data-view="prices"]')`),null,'主页不重复显示已合并功能');
-  console.log('PASS: 人员圆角卡片/姓名编辑、两种表头点击编辑及数据保留/工资视角恢复/拖选与键盘不误触、部门树/订单单价/极简模式/SQLite重启');
+  console.log('PASS: 人员卡片单击编辑、两种表头单击只选格/双击编辑/数据保留/工资视角恢复/拖选与键盘不误触、部门树/订单单价/极简模式/SQLite重启');
 };

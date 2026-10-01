@@ -165,7 +165,7 @@ function renderQcDeptTables() {
           style="min-width:70px;width:70px;background:#e0e7ff;color:#3730a3;position:sticky;top:0;z-index:10;text-align:center;">
           <span class="column-drag-handle" draggable="true" data-emp-id="${emp.id}" data-dept-id="${emp.dept_id}"
             ondragstart="onQcColumnDragStart(event)" ondragend="onQcColumnDragEnd(event)" title="按住拖拽调整同部门内列顺序">•••</span>
-          <span class="member-list-name-color" onclick="showEditMemberModal(${emp.id})" title="编辑人员">${escHtml(emp.name)}</span>
+          <span class="member-list-name-color" ondblclick="showEditMemberModal(${emp.id})" title="双击编辑人员">${escHtml(emp.name)}</span>
           <br><span class="qc-th-subtext">${escHtml(emp.sub_dept_name)}</span>
         </th>`;
       }
