@@ -198,7 +198,6 @@ function renderQcDeptTables() {
           <br><span class="qc-th-subtext">${escHtml(emp.sub_dept_name)}</span>
         </th>`;
       }
-      html += `<th style="min-width:70px;width:70px;background:#fef9c3;color:#92400e;position:sticky;top:0;z-index:10;text-align:center;">行合计</th>`;
       html += `<th data-add-member="" data-dept-id="${dept.id}" title="双击添加人员" style="background:#eff6ff;color:#64748b"></th>`;
       html += '</tr></thead>';
 
@@ -207,19 +206,13 @@ function renderQcDeptTables() {
       for (const rowKey of sortedRowKeys) {
         const row = _qcDeptRows[rowKey] || {};
 
-        // 计算行合计：对数视角合计对数，工资视角合计金额。
+        // 已做数量在两种视角中均统计本行人员对数。
         let doneQty = 0;
-        let rowTotal = 0;
         for (const emp of deptEmps) {
           const qtyKey = `${rowKey},${emp.id}`;
           const qty = _qcState.qtyData[qtyKey] || 0;
-          const empSubPrice = row[emp.sub_dept_id] || 0;
           doneQty += qty;
-          rowTotal += isWage ? roundNumber(qty * empSubPrice) : qty;
         }
-        rowTotal = isWage ? roundNumber(rowTotal) : rowTotal;
-        const rowDisplay = isWage ? (isQcRowUsed(rowKey) ? fmtCompact(rowTotal) : '') : rowTotal;
-        const rowCompact = String(rowDisplay).length > 8 ? ' compact' : '';
 
         html += `<tr data-row-key="${escHtml(rowKey)}" data-qc-used="${isQcRowUsed(rowKey)}">`;
 
@@ -292,8 +285,6 @@ function renderQcDeptTables() {
           }
         }
 
-        // 行合计
-        html += `<td data-sheet-value="${rowTotal}" class="row-total-display${isWage ? ' wage' : ''}${rowCompact}" style="background:#fef9c3;font-weight:700;color:#92400e;text-align:center;">${rowDisplay}</td>`;
         html += '<td class="qc-add-member-cell" style="background:#ffffff"></td>';
 
         html += '</tr>';
@@ -642,7 +633,7 @@ function onQcQtyTab(e, el) {
   }
 }
 
-// ---- 更新某行所有合计（行合计 + 全厂合计） ----
+// ---- 更新已做数量与全厂工资合计 ----
 function updateDeptRowTotals(rowKey) {
   const deptId = parseInt(rowKey.split('_')[0]);
   const row = _qcDeptRows[rowKey] || {};
@@ -650,13 +641,11 @@ function updateDeptRowTotals(rowKey) {
   const isWage = _qcState.qcViewMode === 'wage';
 
   let doneQty = 0;
-  let rowTotal = 0;
   for (const emp of deptEmps) {
     const qtyKey = `${rowKey},${emp.id}`;
     const qty = _qcState.qtyData[qtyKey] || 0;
     const empSubPrice = row[emp.sub_dept_id] || 0;
     doneQty += qty;
-    rowTotal += isWage ? roundNumber(qty * empSubPrice) : qty;
 
     // 更新该成员的工资显示（工资视角下）
     if (isWage) {
@@ -671,7 +660,7 @@ function updateDeptRowTotals(rowKey) {
     }
   }
 
-  // 更新行合计 - 通过 rowKey 找到对应行的第一个 td（在同一个 table 中按行序号定位）
+  // 按业务行标识更新已做数量。
   const wrap = document.getElementById('qcDeptTablesWrap');
   if (!wrap) return;
   const tables = wrap.querySelectorAll('.spreadsheet');
@@ -683,15 +672,6 @@ function updateDeptRowTotals(rowKey) {
         tr.dataset.qcUsed = String(isQcRowUsed(rowKey));
         const doneEl = tr.querySelector('.qc-done-display');
         if (doneEl) { doneEl.dataset.sheetValue = String(doneQty); doneEl.textContent = String(doneQty); }
-        const totalEl = tr.querySelector('.row-total-display');
-        if (totalEl) {
-          rowTotal = isWage ? roundNumber(rowTotal) : rowTotal;
-          totalEl.dataset.sheetValue = String(rowTotal);
-          const rowDisplay = isWage ? (isQcRowUsed(rowKey) ? fmtCompact(rowTotal) : '') : rowTotal;
-          const rowCompact = String(rowDisplay).length > 8 ? ' compact' : '';
-          totalEl.textContent = rowDisplay;
-          totalEl.className = `row-total-display${isWage ? ' wage' : ''}${rowCompact}`;
-        }
         break;
       }
     }

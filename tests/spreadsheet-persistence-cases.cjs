@@ -175,9 +175,14 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await delay(80);
   assert.equal(await evaluate(`isQcRowUsed('1_1')`),true,'仅清空对数时单价仍使行保持在用');
   const dataColumns = await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.save().sheets['dept-1'].columnCount`);
-  assert.equal(dataColumns,await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.get('dept-1').columnCount`),'不生成表头范围之外的空白列');
-  await assert.rejects(evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${dataColumns}).setValue(25)`),/Range is out of bounds/,'表头之外不存在可写入列');
-  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(2,0,1,${dataColumns}))`);
+  const businessColumns = await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.get('dept-1').columnCount`);
+  assert.ok(dataColumns>=businessColumns+100,'业务表头右侧露出至少100个空白列');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${businessColumns+4}).setValue(25)`);
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${businessColumns+4}).getRawValue() ?? ''`), '', '额外空白列禁止直接写入无业务含义的数据');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().scrollToCell(1,${dataColumns-3},0)`);
+  await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.save().sheets['dept-1'].columnCount>${dataColumns}`);
+  assert.ok(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getVisibleRange().endColumn>${businessColumns}`),'可横向滚动到更多空白列，右边缘自动扩展');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().scrollToCell(2,0,0);void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(2,0,1,${dataColumns}))`);
   await key('Delete',46);
   await delay(80);
   assert.equal(await cell('qcDeptTablesWrap',2,qtyCol),9,'清空中间整行后后续数据向上补齐');

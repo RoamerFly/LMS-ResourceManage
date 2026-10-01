@@ -73,6 +73,24 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
     console.log('SCREENSHOT: '+file);
   };
   await loaded();
+  const assertSingleLineStats = async () => {
+    const result = await evaluate(`(() => {
+      const card=document.querySelector('.member-card'), stats=card.querySelector('.member-monthly-stats');
+      const oldWidth=card.style.width, oldHtml=stats.innerHTML;
+      card.style.width='260px';
+      stats.querySelector('.member-pairs').innerHTML='12345678.90<small> 对</small>';
+      stats.querySelector('.member-wage').textContent='¥12345678.90';
+      const rect=card.getBoundingClientRect();
+      const values=Array.from(stats.querySelectorAll('strong'),value=>{
+        const range=document.createRange();range.selectNodeContents(value.firstChild);
+        const rects=Array.from(range.getClientRects());
+        return {lines:new Set(rects.map(r=>Math.round(r.bottom))).size,right:Math.max(...rects.map(r=>r.right)),left:Math.min(...rects.map(r=>r.left))};
+      });
+      card.style.width=oldWidth;stats.innerHTML=oldHtml;
+      return {values,left:rect.left,right:rect.right};
+    })()`);
+    assert.ok(result.values.every(value=>value.lines===1 && value.left>=result.left && value.right<=result.right),'窄卡片中的长对数和工资含小数点完整单行显示');
+  };
   assert.equal(await evaluate(`document.querySelector('.nav-item[data-view="members"]').textContent.trim()`),'人员管理','导航名称更新');
   assert.equal(await evaluate(`document.querySelector('.nav-item[data-view="departments"],.nav-item[data-view="prices"]')`),null,'独立部门与单价导航已合并');
   await click('.nav-item[data-view="members"]');
@@ -82,6 +100,7 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   assert.equal(await evaluate(`document.querySelector('.member-card button,.member-card input,#memberSelectAll,#batchDelBtn')`),null,'人员卡片与工具栏移除选中及多余按钮');
   assert.equal(await evaluate(`document.querySelector('.member-card[data-emp-id="1"] .member-pairs').textContent.trim()`),'1 对','卡片显示所选月份做货对数');
   assert.equal(await evaluate(`document.querySelector('.member-card[data-emp-id="1"] .member-wage').textContent`),'¥2.50','卡片显示所选月份工资');
+  await assertSingleLineStats();
   await evaluate(`document.getElementById('memberMonth').value='10';document.getElementById('memberMonth').dispatchEvent(new Event('change'))`);
   await waitFor(`document.getElementById('personnelPeriod').textContent.includes('10 月') && document.querySelector('.member-card[data-emp-id="1"] .member-wage').textContent==='¥0.00'`);
   assert.equal(await evaluate(`document.querySelector('.member-card[data-emp-id="1"] .member-pairs').textContent.trim()`),'0 对','空月份显示零，不沿用上月数值');
@@ -301,6 +320,7 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await waitFor(`_currentView==='members' && document.getElementById('personnelPeriod').textContent.includes('快捷计算数据')`);
   assert.equal(await evaluate(`document.querySelector('.member-card[data-emp-id="1"] .member-pairs').textContent.trim()`),'88 对','极简人员卡片读取已保存的快捷对数');
   assert.equal(await evaluate(`document.querySelector('.member-card[data-emp-id="1"] .member-wage').textContent`),'¥242.00','极简人员卡片工资与总工资表一致');
+  await assertSingleLineStats();
   const cardDecor = await evaluate(`(() => {const cards=Array.from(document.querySelectorAll('#memberList .member-card'));return cards.map(card=>({dept:card.dataset.deptId,gender:card.dataset.gender,bg:getComputedStyle(card).backgroundColor,pattern:getComputedStyle(card,'::before').backgroundImage,pointer:getComputedStyle(card,'::before').pointerEvents}));})()`);
   assert.equal(cardDecor[0].bg,cardDecor[1].bg,'同部门卡片保持同一背景色');
   assert.notEqual(cardDecor[0].bg,cardDecor[2].bg,'不同部门使用不同背景色');
@@ -368,6 +388,11 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.setActiveSheet(${JSON.stringify(secondSheetId)})`);
   await delay(300);
   let addCol = await evaluate(`Array.from(LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.get(${JSON.stringify(secondSheetId)}).cells.values()).find(cell=>cell.row===0 && cell.td.dataset.addMember!==undefined).col`);
+  assert.equal(await evaluate(`Array.from(LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.get(${JSON.stringify(secondSheetId)}).cells.values()).some(cell=>cell.row===0 && cell.td.textContent.trim()==='行合计')`),false,'人员列右侧没有行合计');
+  await cellDoubleClick('qcDeptTablesWrap',0,addCol+2);
+  await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.querySelector('.modal-title').textContent==='添加人员'`);
+  assert.equal(await evaluate(`Number(document.getElementById('m-dept').value)`),secondDeptId,'更多空白列的表头也可双击新增当前部门人员');
+  await click('#modalBox .btn-secondary');
   await cellClick('qcDeptTablesWrap',0,addCol);
   assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'空白人员表头单击只选择');
   await cellDoubleClick('qcDeptTablesWrap',0,addCol);

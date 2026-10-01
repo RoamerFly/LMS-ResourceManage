@@ -119,7 +119,8 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   await key('v',86,2);
   await delay(100);
   assert.deepEqual(await evaluate(`[_qcDeptRows['1_0'][10],_qcState.qtyData['1_0,1'],_qcState.qtyData['1_0,2']]`), [3.75,12,13], '单价小数与两名员工写回');
-  assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,6).getValue())`), 25, '快捷计算行合计');
+  assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,2).getValue())`), 25, '快捷计算已做数量');
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('#qcDeptTablesWrap th')).some(th=>th.textContent.trim()==='行合计')`),false,'快捷计算不显示重复行合计');
   await delay(550);
   assert.ok(await evaluate('saves.length > 0'), '接回原有自动保存');
   assert.equal(await evaluate(`document.querySelector('#qcDeptTablesWrap .lms-sheet-hint')`),null,'快捷计算不显示选格提示');
@@ -136,7 +137,7 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   };
   await pasteSparse();
   await pasteSparse();
-  assert.deepEqual(await evaluate(`(() => {const s=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet();return [1,2,3].map(r=>[3,4,5,6].map(c=>s.getRange(r,c).getCellStyleData().bg.rgb));})()`),Array.from({length:3},()=>['#f0fdf4','#eff6ff','#eff6ff','#fef9c3']),'稀疏XLSX粘贴和相同值重复粘贴后，有数据的整行包括空格保持在用样式');
+  assert.deepEqual(await evaluate(`(() => {const s=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet();return [1,2,3].map(r=>[2,3,4,5].map(c=>s.getRange(r,c).getCellStyleData().bg.rgb));})()`),Array.from({length:3},()=>['#fef9c3','#f0fdf4','#eff6ff','#eff6ff']),'稀疏XLSX粘贴和相同值重复粘贴后，有数据的整行包括空格保持在用样式');
   assert.equal(await evaluate(`isQcRowUsed('1_2') && _qcState.qtyData['1_2,2']===6`),true,'仅末列有值的新行也在用');
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,4).getCellStyleData().fs`),13,'粘贴不引入源字体字号');
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,4).getCellStyleData().fs`),13,'新增行的空格也使用本表字号');
@@ -164,7 +165,7 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   await delay(100);
   assert.equal(await evaluate(`isQcRowUsed('1_2') || isQcRowUsed('1_3')`),false,'Delete清空后释放行数据');
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,4).getCellStyleData().bg.rgb`),'#ffffff','清空后恢复白色空白行');
-  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,6).getValue() ?? ''`),'','未用行的合计也保持空白');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,2).getValue() ?? ''`),'','未用行的已做数量保持空白');
   await evaluate('undo()');
   await delay(150);
   assert.equal(await evaluate(`_qcState.qtyData['1_3,2']`),5,'撤销恢复新启用行');

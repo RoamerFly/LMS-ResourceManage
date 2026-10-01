@@ -43,6 +43,7 @@
   }
 
   function qcRowStyle(cell, used, style = cell.baseStyle) {
+    if (cell.td.classList.contains('qc-add-member-cell')) return { ...style, bg: { rgb: '#ffffff' } };
     const total = cell.td.matches('.row-total-display, .qc-done-display');
     return { ...style,
       bg: { rgb: !used ? '#ffffff' : total ? '#fef9c3' : cell.isPrice ? '#f0fdf4' : cell.input?.dataset.refField ? '#f5f3ff' : '#eff6ff' },
@@ -112,7 +113,8 @@
     }
     const data = { id, name, cellData, mergeData, columnData,
       rowCount: type === 'quick-calc' ? Math.max(200, ...Array.from(rows.keys(), r => r + 101)) : Math.max(table.rows.length + 20, 50),
-      columnCount: type === 'quick-calc' ? columnCount : Math.max(columnCount + 3, 12),
+      // 业务列之后继续显示空白网格，接近右侧边界时再扩展。
+      columnCount: Math.max(columnCount + 100, 26),
       defaultColumnWidth: 92, defaultRowHeight: 32,
       rowHeader: { width: 42 }, columnHeader: { height: 25 },
       freeze: { startRow: headerRows, startColumn: type === 'work-edit' ? 2 : 0, ySplit: headerRows, xSplit: type === 'work-edit' ? 2 : 0 },
@@ -184,11 +186,16 @@
     const meta = instance?.sheets.get(context.sheetId);
     if (!meta) return;
     const sheet = instance.book.setActiveSheet(meta.id);
+    const lastColumn = Math.max(context.range?.endColumn ?? 0, context.scroll?.sheetViewStartColumn ?? 0);
+    if (lastColumn >= meta.data.columnCount - 20) {
+      meta.data.columnCount = Math.ceil((lastColumn + 101) / 100) * 100;
+      sheet.setColumnCount(meta.data.columnCount);
+    }
     if (context.range) {
       const column = old => {
         const key = context.columns[old];
         const found = Object.entries(meta.columnKeys).find(([, value]) => value === key);
-        return found ? Number(found[0]) : Math.min(old, meta.columnCount - 1);
+        return found ? Number(found[0]) : Math.min(old, meta.data.columnCount - 1);
       };
       const row = old => {
         const key = context.rows[old];
@@ -495,7 +502,10 @@
     // 每次换簿使用不同标识，防止上一轮编辑的异步命令写入新工作簿。
     data = { ...data, id: `lms-${type}-${++workbookSequence}` };
     const book = api.createWorkbook(data);
-    for (const sheet of sheets) sheet.data.rowCount = data.sheets[sheet.id].rowCount;
+    for (const sheet of sheets) {
+      sheet.data.rowCount = data.sheets[sheet.id].rowCount;
+      sheet.data.columnCount = data.sheets[sheet.id].columnCount;
+    }
     const instance = { wrap, type, univer, api, book, sheets: new Map(sheets.map(sheet => [sheet.id, sheet])),
       fingerprints, source, bar, host, syncing: false, historyPending: false, disposables: [] };
     instances.set(wrap, instance);
@@ -522,6 +532,18 @@
       }
     };
     const listen = (event, fn) => instance.disposables.push(api.addEvent(event, fn));
+    const extendColumns = event => {
+      if (event.workbook.getId() !== book.getId() || instances.get(wrap) !== instance) return;
+      const meta = instance.sheets.get(event.worksheet.getSheetId());
+      if (!meta) return;
+      const visible = event.worksheet.getVisibleRange();
+      const edge = Math.max(visible?.endColumn ?? 0, ...((event.selections || []).map(range => range.endColumn)));
+      if (edge < meta.data.columnCount - 20) return;
+      meta.data.columnCount = Math.ceil((edge + 101) / 100) * 100;
+      event.worksheet.setColumnCount(meta.data.columnCount);
+    };
+    listen(api.Event.Scroll, extendColumns);
+    listen(api.Event.SelectionChanged, extendColumns);
     const ensureQcCapacity = (meta, requiredRows) => {
       if (requiredRows <= meta.data.rowCount) return;
       meta.data.rowCount = Math.ceil((requiredRows + 100) / 100) * 100;
@@ -642,10 +664,13 @@
       if (columnDrag.suppressEdit()) { event.cancel = true; return; }
       const meta = instance.sheets.get(event.worksheet.getSheetId());
       const addHeader = meta?.cells.get(`${event.row},${event.column}`)?.td;
-      if (event.row === meta?.headerRows - 1 && addHeader?.dataset.addMember !== undefined) {
+      if (meta && event.row === meta.headerRows - 1 &&
+        (addHeader?.dataset.addMember !== undefined || event.column >= meta.columnCount)) {
         event.cancel = true;
         // 空表头只通过双击新增；键入和F2仍维持只读。
-        if (event.eventType === 3) void showAddMemberModal({ deptId: Number(addHeader.dataset.deptId) || null }); // Dblclick
+        if (event.eventType === 3) void showAddMemberModal({
+          deptId: type === 'quick-calc' ? Number(meta.id.replace('dept-', '')) : null
+        }); // Dblclick
         return;
       }
       const header = personHeader(meta, event.row, event.column);
