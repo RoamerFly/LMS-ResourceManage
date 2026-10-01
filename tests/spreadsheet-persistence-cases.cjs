@@ -21,8 +21,10 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
       await mouse('mouseReleased',at,{button:'left',buttons:0,clickCount:n});
     }
     await delay(80);
+    await waitFor(`(() => {const range=LmsSpreadsheet.getInstance('${wrap}').book.getActiveSheet().getSelection()?.getActiveRange()?.getRange();return range?.startRow===${r} && range?.startColumn===${c};})()`);
   };
   const type = async text => {
+    await waitFor(`document.activeElement?.getAttribute('data-u-comp')==='editor'`);
     for (const ch of text) {
       await call('Input.dispatchKeyEvent',{type:'keyDown',key:ch,windowsVirtualKeyCode:ch==='.'?190:ch.charCodeAt(0),text:ch});
       await call('Input.dispatchKeyEvent',{type:'keyUp',key:ch,windowsVirtualKeyCode:ch==='.'?190:ch.charCodeAt(0)});
@@ -208,6 +210,24 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   assert.deepEqual(await usedColors(),[['#eff6ff','#eff6ff'],['#eff6ff','#eff6ff']],'粘贴行样式保存和重启后保持一致');
   assert.deepEqual(await usedFontSizes(),[[13,13],[13,13]],'保存与重启后仍保持目标表格字体');
   assert.equal(await cell('qcDeptTablesWrap',1,qtyCol),88,'稀疏粘贴重启后数值保留');
+  await select('qcDeptTablesWrap',3,priceCol);
+  await waitFor(`document.activeElement?.getAttribute('data-u-comp')==='editor'`);
+  const bulkHtml = '<table>'+Array.from({length:500},()=>'<tr><td style="font-size:22pt"><b>￥1.70&nbsp;</b></td></tr>').join('')+'</table>';
+  await evaluate(`navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob([Array.from({length:500},()=>'￥1.70\\u00a0').join('\\n')],{type:'text/plain'}),'text/html':new Blob([${JSON.stringify(bulkHtml)}],{type:'text/html'})})])`);
+  await key('v',86,2);
+  await waitFor(`getQcUsedRowCount(1)===502`);
+  assert.equal(await evaluate(`_qcDeptRows['1_501'][1]`),1.7,'500行人民币金额直接启用未使用行，最后一行未截断');
+  await click('#qcSaveBtn');
+  await waitFor(`get('/api/quick-calc-save?year=2026&month=9').then(data=>data.dept_rows['1_501']?.[1]===1.7)`);
+  await restartBackend();
+  await call('Page.reload');
+  await waitFor(`document.getElementById('loadingOverlay')?.style.display === 'none'`);
+  await click('.nav-item[data-view="quickcalc"]');
+  await ready('qcDeptTablesWrap');
+  await delay(350);
+  assert.equal(await evaluate(`getQcUsedRowCount(1)`),502,'大量粘贴保存重启后所有行保留');
+  assert.equal(await cell('qcDeptTablesWrap',502,priceCol),1.7,'大量粘贴末行数值在重启后可见');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(502,${priceCol}).getCellStyleData().fs`),13,'新增行自动匹配本表字号');
   const qcShot = await call('Page.captureScreenshot',{format:'png'});
   const qcScreenshot = path.join(os.tmpdir(),'lms-quickcalc-compact.png');
   await fs.writeFile(qcScreenshot,Buffer.from(qcShot.data,'base64'));

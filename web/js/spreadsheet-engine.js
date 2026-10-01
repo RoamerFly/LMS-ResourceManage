@@ -348,6 +348,15 @@
     return { isDragging: () => !!press?.active || settling, suppressEdit: () => press?.active || settling || Date.now() < suppressEditUntil };
   }
 
+  function normalizeNumericValue(cell, value) {
+    if (typeof value !== 'string') return value;
+    const raw = value.replace(/[\u200b-\u200d\u2060\ufeff]/g, '').trim();
+    const number = cell.isPrice ? raw.replace(/^[￥¥]\s*/, '') : raw;
+    // 只识别规范数字与千位分组，不把负数、公式或带说明的文本清洗成金额。
+    if (!/^(?:\d+|\d{1,3}(?:[,，]\d{3})+)(?:\.\d+)?$/.test(number)) return raw;
+    return number.replace(/[,，]/g, '');
+  }
+
   function mount(wrap, type) {
     if (!wrap || !window.LmsSheetEngine) return;
     // 两个业务页面只允许一个活动工作簿，避免隐藏表格抢占键盘和编辑器焦点。
@@ -446,6 +455,21 @@
       }
     };
     const listen = (event, fn) => instance.disposables.push(api.addEvent(event, fn));
+    const ensureQcCapacity = (meta, requiredRows) => {
+      if (requiredRows <= meta.data.rowCount) return;
+      meta.data.rowCount = Math.ceil((requiredRows + 100) / 100) * 100;
+      book.getSheetBySheetId(meta.id).setRowCount(meta.data.rowCount);
+    };
+    listen(api.Event.BeforeClipboardPaste, event => {
+      if (type !== 'quick-calc' || event.workbook.getId() !== book.getId()) return;
+      const meta = instance.sheets.get(event.worksheet.getSheetId());
+      const selection = event.worksheet.getSelection()?.getActiveRange()?.getRange();
+      if (!meta || !selection || selection.startRow < meta.headerRows) return;
+      const table = event.html ? new DOMParser().parseFromString(event.html, 'text/html').querySelector('table') : null;
+      const rows = table?.rows.length || String(event.text || '').replace(/[\r\n]+$/, '').split(/\r\n|\r|\n/).length;
+      // 引擎在写值前尝试插入超出容量的行，提前扩展空白容量即可避免结构操作被拦截。
+      ensureQcCapacity(meta, selection.startRow + rows);
+    });
     const recordHistory = () => {
       if (instance.historyPending) return;
       instance.historyPending = true;
@@ -457,7 +481,7 @@
       for (const cell of meta.cells.values()) {
         if (cell.input) continue;
         const value = textValue(cell.td);
-        const actual = book.getSheetBySheetId(meta.id).getRange(cell.row, cell.col).getValue();
+        const actual = book.getSheetBySheetId(meta.id).getRange(cell.row, cell.col).getRawValue();
         if (String(value) === String(actual)) continue;
         (cellValue[cell.row] ||= {})[cell.col] = { v: value, t: typeof value === 'number' ? 2 : 1 };
       }
@@ -579,6 +603,11 @@
       if (event.id === 'sheet.mutation.set-range-values') {
         const meta = instance.sheets.get(event.params?.subUnitId);
         if (!meta) { event.cancel = true; return; }
+        if (type === 'quick-calc') {
+          const requiredRows = Object.keys(event.params.cellValue || {}).reduce((count, row) =>
+            Number.isSafeInteger(Number(row)) && Number(row) >= 0 ? Math.max(count, Number(row) + 1) : count, meta.data.rowCount);
+          ensureQcCapacity(meta, requiredRows);
+        }
         const proposedRows = new Map();
         for (const [r, columns] of Object.entries(event.params.cellValue || {})) {
           for (const [c, patch] of Object.entries(columns || {})) {
@@ -607,9 +636,10 @@
             }
             // 外部表格的富文本数字转成数值，消除源文本内部的字体与颜色。
             if (patch?.p && !patch.f) {
-              const plain = String(patch.p.body?.dataStream || '').trim();
+              const plain = normalizeNumericValue(cell, String(patch.p.body?.dataStream || ''));
               if (validValue(cell, plain)) { patch.v = Number(plain || 0); patch.t = 2; patch.p = null; }
             }
+            if (patch && !patch.p && !patch.f) patch.v = normalizeNumericValue(cell, patch.v);
             if (patch?.f || patch?.p || !validValue(cell, patch?.v)) {
               event.cancel = true;
               notify('对数须为非负整数，单价须为非负数字');
@@ -630,14 +660,13 @@
         }
         if (type === 'quick-calc') {
           const firstEmptyRow = meta.headerRows + getQcUsedRowCount(meta.id.replace('dept-', ''));
-          for (const row of proposedRows.keys()) {
-            if (row <= firstEmptyRow) continue;
-            for (let preceding = firstEmptyRow; preceding < row; preceding++) {
-              if (![...(proposedRows.get(preceding)?.values() || [])].some(value => value > 0)) {
-                event.cancel = true;
-                notify('请连续录入，不能跳过空白行粘贴或编辑');
-                return;
-              }
+          const lastRow = [...proposedRows.keys()].reduce((last, row) => Math.max(last, row), firstEmptyRow);
+          // 每条新增行只检查一次，避免大块粘贴时反复遍历同一段前置行。
+          for (let preceding = firstEmptyRow; preceding < lastRow; preceding++) {
+            if (![...(proposedRows.get(preceding)?.values() || [])].some(value => value > 0)) {
+              event.cancel = true;
+              notify('请连续录入，不能跳过空白行粘贴或编辑');
+              return;
             }
           }
         }
@@ -659,7 +688,8 @@
           // 粘贴会覆盖空格和相同值的格式，涉及的整行都需按业务数据恢复在用样式。
           if (type === 'quick-calc' && cell.row >= meta.headerRows) changedRows.add(cell.row);
           if (!cell.input) continue;
-          const value = sheet.getRange(cell.row, cell.col).getValue();
+          // getValue 会返回带千位分隔符的显示文本，业务输入必须读取原始数值。
+          const value = sheet.getRange(cell.row, cell.col).getRawValue();
           if (type === 'quick-calc' ? String(value ?? '') === cell.input.value : Number(value || 0) === Number(cell.input.value || 0)) continue;
           cell.input.value = value == null ? '' : String(value);
           cell.input.dispatchEvent(new Event('input', { bubbles: true }));

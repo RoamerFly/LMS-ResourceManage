@@ -177,5 +177,41 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   assert.equal(await evaluate(`_qcState.qtyData['1_198,1']`),15,'新增末尾行映射正确');
   await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(200,0,1,2).setValues([[3.5,1.2]])`);
   assert.equal(await evaluate(`isQcRowUsed('1_199')`),false,'空白行非法粘贴整块拒绝且不启用');
-  console.log('PASS: 引擎复制粘贴、空白行直接录入/自动样式/清空/撤销重做/扩展、数值校验及自动保存');
+  await evaluate(`_qcState.subDepartments.push({id:11,dept_id:1,name:'贴合'});_qcState.employees[1].sub_dept_id=11;_qcDeptRows={'1_0':{10:1.25,11:1.5}};_qcState.qtyData={'1_0,1':1};clearHistory();renderQcDeptTables()`);
+  await delay(400);
+  const prices = [[1.7,1.8],[1,1],[1,1],[1.9,2.2],[1.2,1.2],[1.6,1.6],[1.1,1.3],[1.6,1.9]];
+  const moneyText = prices.map(row=>row.map(value=>'￥'+value.toFixed(2)+'\u00a0').join('\t')).join('\r\n');
+  const moneyHtml = '<table>'+prices.map(row=>'<tr>'+row.map(value=>'<td style="font-size:24pt;background:#ff0000"><b>￥'+value.toFixed(2)+'&nbsp;</b></td>').join('')+'</tr>').join('')+'</table>';
+  for (const html of [null,moneyHtml]) {
+    const startRow = html ? 10 : 2;
+    await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(${startRow},0))`);
+    if(html) await evaluate(`navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob([${JSON.stringify(moneyText)}],{type:'text/plain'}),'text/html':new Blob([${JSON.stringify(html)}],{type:'text/html'})})])`);
+    else await evaluate(`navigator.clipboard.writeText(${JSON.stringify(moneyText)})`);
+    await key('v',86,2);
+    await delay(150);
+    assert.deepEqual(await evaluate(`Array.from({length:8},(_,i)=>[_qcDeptRows['1_'+(i+${startRow-1})]?.[10],_qcDeptRows['1_'+(i+${startRow-1})]?.[11]])`),prices,'直接对未使用行粘贴用户提供的人民币单价，无需激活，纯文本与富文本均支持');
+    assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(${startRow+7},1).getCellStyleData().fs`),13,'金额粘贴仍使用目标字号');
+    assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(${startRow+7},1).getCellStyleData().bg.rgb`),'#f0fdf4','金额粘贴仍使用单价列样式');
+  }
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0).setValue('¥ 1,234.50\u00a0')`);
+  assert.equal(await evaluate(`_qcDeptRows['1_0'][10]`),1234.5,'半角人民币和规范千位分隔金额支持');
+  for(const invalid of ['￥','￥-1.20','￥1,23.40','￥1.70元','=1+2']) {
+    await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0).setValue(${JSON.stringify(invalid)})`);
+    assert.equal(await evaluate(`_qcDeptRows['1_0'][10]`),1234.5,'错误金额与公式不会被误清洗成数字');
+  }
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,2).setValue('￥1.70')`);
+  assert.equal(await evaluate(`_qcState.qtyData['1_0,1']`),1,'金额不误写入员工对数');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(18,0));navigator.clipboard.writeText(Array.from({length:500},()=>'￥0.80\\t￥0.90').join('\\n'))`);
+  await key('v',86,2);
+  await delay(300);
+  assert.equal(await evaluate(`getQcUsedRowCount(1)`),517,'500行一次粘贴到未使用行，无需逐行激活');
+  assert.deepEqual(await evaluate(`[_qcDeptRows['1_17'][10],_qcDeptRows['1_516'][11]]`),[.8,.9],'跨越默认200行容量的首行和末行均未截断');
+  assert.ok(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.save().sheets['dept-1'].rowCount`)>517,'粘贴时按实际范围扩展容量');
+  await evaluate('undo()');
+  await delay(200);
+  assert.equal(await evaluate(`getQcUsedRowCount(1)`),17,'大量粘贴可一次撤销');
+  await evaluate('redo()');
+  await delay(200);
+  assert.equal(await evaluate(`getQcUsedRowCount(1)`),517,'大量粘贴可一次重做');
+  console.log('PASS: 引擎复制粘贴、人民币单价/NBSP/目标样式、空白行直接录入/自动样式/清空/撤销重做/扩展、数值校验及自动保存');
 };
