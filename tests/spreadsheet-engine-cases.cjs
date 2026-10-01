@@ -117,6 +117,23 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   assert.ok(await evaluate('saves.length > 0'), '接回原有自动保存');
   assert.equal(await evaluate(`document.querySelector('#qcDeptTablesWrap .lms-sheet-hint')`),null,'快捷计算不显示选格提示');
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('#qcDeptTablesWrap button')).some(button=>/添加行|添加一行|删除选中行/.test(button.textContent))`),false,'快捷计算不显示行管理按钮');
+  // Excel/WPS HTML 剪贴板包含白底空格：重复粘贴相同值仍须刷新整行状态。
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0,2,3).setValues([[3.75,null,13],[2.5,7,null]])`);
+  const sparseValues = [[3.75,'',13],[2.5,7,''],['','',6]];
+  const sparseHtml = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><body><table>' + sparseValues.map(row=>'<tr>'+row.map(value=>`<td style="background-color:#ffffff;font-size:16pt">${value}</td>`).join('')+'</tr>').join('') + '</table></body></html>';
+  const pasteSparse = async () => {
+    await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0))`);
+    await evaluate(`navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob([${JSON.stringify(sparseValues.map(row=>row.join('\t')).join('\n'))}],{type:'text/plain'}),'text/html':new Blob([${JSON.stringify(sparseHtml)}],{type:'text/html'})})])`);
+    await key('v',86,2);
+    await delay(150);
+  };
+  await pasteSparse();
+  await pasteSparse();
+  assert.deepEqual(await evaluate(`(() => {const s=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet();return [1,2,3].map(r=>[0,1,2,3].map(c=>s.getRange(r,c).getCellStyleData().bg.rgb));})()`),Array.from({length:3},()=>['#f0fdf4','#eff6ff','#eff6ff','#fef9c3']),'稀疏XLSX粘贴和相同值重复粘贴后，有数据的整行包括空格保持在用样式');
+  assert.equal(await evaluate(`isQcRowUsed('1_2') && _qcState.qtyData['1_2,2']===6`),true,'仅末列有值的新行也在用');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,1).getCellStyleData().fs`),16,'粘贴保留非业务格式字体');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,0,1,3).setValues([[null,null,null]])`);
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,0,2,3).setValues([[3.75,12,13],[2.5,7,8]])`);
   const blankPoint = await evaluate(`(() => {const rect=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,1).getCellRect();const canvas=Array.from(document.querySelectorAll('#qcDeptTablesWrap canvas'),el=>el.getBoundingClientRect()).sort((a,b)=>b.width*b.height-a.width*a.height)[0];return {x:canvas.x+rect.x+rect.width/2,y:canvas.y+rect.y+rect.height/2};})()`);
   await mouse('mousePressed',blankPoint,{button:'left',buttons:1,clickCount:1});
   await mouse('mouseReleased',blankPoint,{button:'left',buttons:0,clickCount:1});

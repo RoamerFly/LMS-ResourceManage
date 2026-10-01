@@ -2239,6 +2239,11 @@ body.minimal-mode #view-members .personnel-back { display: none; }
 .lms-column-drag-preview { position: fixed; z-index: 2100; pointer-events: none; max-width: 230px; padding: 9px 12px; border-radius: 10px; background: #1e293b; color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.18); font-size: var(--font-size-12); }
 .lms-column-drag-marker { position: fixed; z-index: 2099; pointer-events: none; border: 2px solid #7c3aed; border-radius: 4px; background: rgba(124,58,237,.10); }
 .lms-column-drag-marker.invalid { border-color: var(--danger); background: rgba(239,68,68,.10); }
+.lms-column-drag-ghost { position: fixed; z-index: 2098; pointer-events: none; background: #fff; outline: 2px solid #8b5cf6; border-radius: 4px; overflow: hidden; box-shadow: 0 10px 24px rgba(76,29,149,.22); will-change: transform; }
+.lms-column-drag-ghost canvas { display: block; width: 100%; height: 100%; }
+.lms-column-drag-counterpart { z-index: 2096; transition: transform 160ms ease-out; }
+.lms-column-drag-origin { position: fixed; z-index: 2095; pointer-events: none; background: rgba(255,255,255,.62); border: 2px dashed #a78bfa; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { .lms-column-drag-counterpart { transition: none; } }
 
 /* 极简模式人员卡片：部门固定色调，男斜纹、女圆点。图案不阻挡单击和拖拽。 */
 body.minimal-mode #view-members .member-card {

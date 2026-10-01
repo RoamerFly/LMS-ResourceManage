@@ -177,10 +177,37 @@
     let timer = null;
     let preview = null;
     let marker = null;
+    let ghost = null;
+    let counterpart = null;
+    let origin = null;
+    let settling = false;
     let suppressEditUntil = 0;
     const headers = meta => [...meta.cells.values()].filter(cell => cell.row === meta.headerRows - 1 && cell.td.dataset.empId);
-    const canvasRect = () => [...host.querySelectorAll('canvas')].map(canvas => canvas.getBoundingClientRect())
-      .sort((a, b) => b.width * b.height - a.width * a.height)[0];
+    const canvasElement = () => [...host.querySelectorAll('canvas')]
+      .sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+    const canvasRect = () => canvasElement()?.getBoundingClientRect();
+    const columnGhost = (meta, cell) => {
+      const canvas = canvasElement();
+      const bounds = canvas?.getBoundingClientRect();
+      const rect = book.getSheetBySheetId(meta.id).getRange(cell.row, cell.col).getCellRect();
+      if (!bounds || !rect) return null;
+      const left = Math.max(bounds.left, bounds.left + rect.x);
+      const top = Math.max(bounds.top, bounds.top + rect.y);
+      const width = Math.min(bounds.right, bounds.left + rect.x + rect.width) - left;
+      const height = bounds.bottom - top;
+      if (width <= 0 || height <= 0) return null;
+      const element = document.createElement('div');
+      element.className = 'lms-column-drag-ghost';
+      Object.assign(element.style, { left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` });
+      const image = document.createElement('canvas');
+      const scaleX = canvas.width / bounds.width, scaleY = canvas.height / bounds.height;
+      image.width = Math.ceil(width * scaleX); image.height = Math.ceil(height * scaleY);
+      image.getContext('2d').drawImage(canvas, (left - bounds.left) * scaleX, (top - bounds.top) * scaleY,
+        width * scaleX, height * scaleY, 0, 0, image.width, image.height);
+      element.append(image);
+      document.body.append(element);
+      return { element, left, top, width, height, cell };
+    };
     const headerAt = (meta, x, y) => {
       const canvas = canvasRect();
       if (!canvas || x < canvas.left || x > canvas.right || y < canvas.top || y > canvas.bottom) return null;
@@ -199,12 +226,27 @@
       press = null;
       preview?.remove(); marker?.remove();
       preview = marker = null;
+      ghost?.element.remove(); counterpart?.element.remove(); origin?.remove();
+      ghost = counterpart = origin = null;
       host.classList.remove('lms-column-dragging');
     };
     const paint = (x, y) => {
       const hit = headerAt(press.meta, x, y);
       const allowed = hit?.cell.td.dataset.deptId === press.source.td.dataset.deptId;
       press.target = allowed ? hit.cell : null;
+      ghost.element.style.transform = `translate(${x - press.x}px, ${y - press.y}px)`;
+      if (press.target && press.target !== press.source) {
+        if (counterpart?.cell !== press.target) {
+          counterpart?.element.remove();
+          counterpart = columnGhost(press.meta, press.target);
+          if (counterpart) {
+            counterpart.element.classList.add('lms-column-drag-counterpart');
+            // 先展示目标列，再平滑移向原位置，让交换方向可见。
+            counterpart.element.getBoundingClientRect();
+          }
+        }
+        if (counterpart) counterpart.element.style.transform = `translateX(${ghost.left - counterpart.left}px)`;
+      } else { counterpart?.element.remove(); counterpart = null; }
       preview.textContent = !hit ? '拖到同部门姓名上换位' : !allowed ? '只能在同一部门内换位' :
         `${textValue(press.source.td)} → ${textValue(hit.cell.td)}`;
       preview.style.left = `${Math.min(x + 14, innerWidth - 240)}px`;
@@ -217,6 +259,7 @@
       }
     };
     const down = event => {
+      if (settling) return;
       clear();
       if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.target.tagName !== 'CANVAS') return;
       press = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, active: false };
@@ -234,10 +277,27 @@
       if (!press || event.pointerId !== press.pointerId) return;
       const gesture = press;
       if (gesture.active) { paint(event.clientX, event.clientY); event.preventDefault(); }
+      const flights = gesture.active && gesture.target && gesture.target !== gesture.source && counterpart
+        ? { source: ghost, target: counterpart } : null;
+      if (flights) { ghost = counterpart = null; settling = true; }
       clear();
       // 让引擎先结束自身的选格手势，再保存与重建人员列。
-      if (gesture.active && gesture.target && gesture.target !== gesture.source) {
-        setTimeout(() => { void swapColumns(gesture.meta, gesture.source, gesture.target); }, 0);
+      if (flights) {
+        setTimeout(async () => {
+          try {
+            const duration = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180;
+            const animation = flights.source.element.animate([
+              { transform: flights.source.element.style.transform },
+              { transform: `translate(${flights.target.left - flights.source.left}px, 0px)` },
+            ], { duration, easing: 'ease-out', fill: 'forwards' });
+            await animation.finished;
+            await swapColumns(gesture.meta, gesture.source, gesture.target);
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          } finally {
+            flights.source.element.remove(); flights.target.element.remove();
+            settling = false;
+          }
+        }, 0);
       }
     };
     const escape = event => {
@@ -262,11 +322,15 @@
       Object.assign(press, { meta, source });
       timer = setTimeout(() => {
         if (!press) return;
+        ghost = columnGhost(press.meta, press.source);
+        if (!ghost) { clear(); return; }
         press.active = true;
         host.classList.add('lms-column-dragging');
         preview = document.createElement('div'); preview.className = 'lms-column-drag-preview';
         marker = document.createElement('div'); marker.className = 'lms-column-drag-marker';
-        document.body.append(preview, marker);
+        origin = document.createElement('div'); origin.className = 'lms-column-drag-origin';
+        Object.assign(origin.style, { left: `${ghost.left}px`, top: `${ghost.top}px`, width: `${ghost.width}px`, height: `${ghost.height}px` });
+        document.body.append(preview, marker, origin);
         paint(press.x, press.y);
       }, 450);
     }));
@@ -281,7 +345,7 @@
       window.removeEventListener('blur', clear);
       window.removeEventListener('keydown', escape, true);
     } });
-    return { isDragging: () => !!press?.active, suppressEdit: () => press?.active || Date.now() < suppressEditUntil };
+    return { isDragging: () => !!press?.active || settling, suppressEdit: () => press?.active || settling || Date.now() < suppressEditUntil };
   }
 
   function mount(wrap, type) {
@@ -580,8 +644,11 @@
         const sheet = book.getSheetBySheetId(meta.id);
         const changedRows = new Set();
         for (const cell of meta.cells.values()) {
-          if (!cell.input || cell.row < changedRange.startRow || cell.row > changedRange.endRow ||
+          if (cell.row < changedRange.startRow || cell.row > changedRange.endRow ||
             cell.col < changedRange.startColumn || cell.col > changedRange.endColumn) continue;
+          // 粘贴会覆盖空格和相同值的格式，涉及的整行都需按业务数据恢复在用样式。
+          if (type === 'quick-calc' && cell.row >= meta.headerRows) changedRows.add(cell.row);
+          if (!cell.input) continue;
           const value = sheet.getRange(cell.row, cell.col).getValue();
           if (type === 'quick-calc' ? String(value ?? '') === cell.input.value : Number(value || 0) === Number(cell.input.value || 0)) continue;
           cell.input.value = value == null ? '' : String(value);

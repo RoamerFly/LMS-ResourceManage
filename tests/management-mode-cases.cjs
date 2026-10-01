@@ -28,17 +28,34 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
     }
     await delay(80);
   };
+  let dragScreenshotSaved = false;
   const longColumnDrag = async (wrap,row,fromCol,toCol,cancel=false) => {
     const from=await cellPoint(wrap,row,fromCol), to=await cellPoint(wrap,row,toCol);
     await mouse('mousePressed',from,{button:'left',buttons:1,clickCount:1});
     await delay(550);
     assert.ok(await evaluate(`document.querySelector('.lms-column-drag-preview')!==null`),'长按进入人员列换位');
+    const originalGhost = await evaluate(`(() => {const el=document.querySelector('.lms-column-drag-ghost');const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,pixels:el.querySelector('canvas').height};})()`);
+    assert.ok(originalGhost.height>100 && originalGhost.pixels>=originalGhost.height,'拖动预览包含姓名和可见数据整列');
     await mouse('mouseMoved',to,{button:'left',buttons:1});
+    const movedGhost = await evaluate(`(() => {const r=document.querySelector('.lms-column-drag-ghost').getBoundingClientRect();return {x:r.x,y:r.y};})()`);
+    assert.ok(Math.abs(movedGhost.x-originalGhost.x-(to.x-from.x))<1 && Math.abs(movedGhost.y-originalGhost.y-(to.y-from.y))<1,'整列预览随鼠标位置移动');
+    if (!dragScreenshotSaved) {
+      await delay(180);
+      assert.ok(await evaluate(`document.querySelector('.lms-column-drag-counterpart')!==null`),'目标列动画预览移向原位置');
+      await screenshot('lms-column-drag-animation');
+      dragScreenshotSaved = true;
+    }
+    const willSwap = !cancel && await evaluate(`document.querySelector('.lms-column-drag-counterpart')!==null`);
     if(cancel) await key('Escape',27);
     await mouse('mouseReleased',to,{button:'left',buttons:0,clickCount:1});
+    if(willSwap) {
+      await delay(20);
+      assert.ok(await evaluate(`Array.from(document.querySelectorAll('.lms-column-drag-ghost')).some(el=>el.getAnimations().some(animation=>animation.playState==='running'))`),'松开后整列平滑吸附到交换位置');
+    }
     await delay(500);
     assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'长按换列不弹人员编辑');
     assert.equal(await evaluate(`document.querySelector('.lms-column-drag-preview')`),null,'松开或取消后移除拖拽提示');
+    assert.equal(await evaluate(`document.querySelector('.lms-column-drag-ghost,.lms-column-drag-origin')`),null,'交换或取消后移除列影像');
   };
   const type = async text => {
     for (const char of text) {

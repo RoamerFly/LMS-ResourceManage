@@ -184,6 +184,27 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await delay(350);
   assert.equal(await cell('qcDeptTablesWrap',2,qtyCol),9,'收拢行重启后仍保持连续');
   assert.equal(await cell('qcDeptTablesWrap',3,qtyCol),0,'收拢后的空白末行重启后不复活');
+  await call('Browser.grantPermissions',{permissions:['clipboardReadWrite','clipboardSanitizedWrite']});
+  const xlsxHtml = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><body><table><tr><td style="background:#fff;font-size:18pt">88</td><td style="background:#fff;font-size:18pt"></td></tr><tr><td style="background:#fff;font-size:18pt">9</td><td style="background:#fff;font-size:18pt"></td></tr></table></body></html>';
+  for (let i=0;i<2;i++) {
+    await select('qcDeptTablesWrap',1,qtyCol);
+    await evaluate(`navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob(['88\\t\\n9\\t'],{type:'text/plain'}),'text/html':new Blob([${JSON.stringify(xlsxHtml)}],{type:'text/html'})})])`);
+    await key('v',86,2);
+    await delay(150);
+  }
+  const usedColors = () => evaluate(`(() => {const s=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet();return [1,2].map(r=>[${qtyCol},${qtyCol+1}].map(c=>s.getRange(r,c).getCellStyleData().bg.rgb));})()`);
+  assert.deepEqual(await usedColors(),[['#eff6ff','#eff6ff'],['#eff6ff','#eff6ff']],'重复XLSX粘贴空格后，有值行的所有人员格仍在用');
+  await click('#qcSaveBtn');
+  await waitFor(`get('/api/quick-calc-save?year=2026&month=9').then(data=>data.qty_data['1_0,1']===88 && data.qty_data['1_1,1']===9)`);
+  await delay(700);
+  await restartBackend();
+  await call('Page.reload');
+  await waitFor(`document.getElementById('loadingOverlay')?.style.display === 'none'`);
+  await click('.nav-item[data-view="quickcalc"]');
+  await ready('qcDeptTablesWrap');
+  await delay(350);
+  assert.deepEqual(await usedColors(),[['#eff6ff','#eff6ff'],['#eff6ff','#eff6ff']],'粘贴行样式保存和重启后保持一致');
+  assert.equal(await cell('qcDeptTablesWrap',1,qtyCol),88,'稀疏粘贴重启后数值保留');
   const qcShot = await call('Page.captureScreenshot',{format:'png'});
   const qcScreenshot = path.join(os.tmpdir(),'lms-quickcalc-compact.png');
   await fs.writeFile(qcScreenshot,Buffer.from(qcShot.data,'base64'));
