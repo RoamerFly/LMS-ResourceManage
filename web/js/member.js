@@ -5,10 +5,16 @@ let memberDraggingId = 0;
 let memberDraggingDeptId = 0;
 let memberSuppressClickUntil = 0;
 let memberEditorLoading = false;
+let memberLoadVersion = 0;
 
 async function loadMembers(options = {}) {
   const { animate = true } = options;
+  const loadVersion = ++memberLoadVersion;
+  const year = Number(document.getElementById('memberYear').value);
+  const month = Number(document.getElementById('memberMonth').value);
+  const source = getSalarySource();
   const container = document.getElementById('memberList');
+  const previousScroll = container.scrollTop;
   ensureMemberNameSortButton();
   const finishRefresh = animate
     ? beginContentRefresh(container, {
@@ -17,14 +23,27 @@ async function loadMembers(options = {}) {
       })
     : () => {};
   try {
-    const emps = await get('/api/employees');
+    const [emps, summary] = await Promise.all([
+      get('/api/employees'),
+      get(`/api/salary-summary?year=${year}&month=${month}&source=${source}`),
+    ]);
+    if (loadVersion !== memberLoadVersion) return;
+    if (!Array.isArray(emps) || !Array.isArray(summary)) throw new Error('人员或月度数据加载失败');
     _state.employees = emps;
+    document.getElementById('personnelPeriod').textContent = `${year} 年 ${pad(month)} 月 · ${getSalarySourceLabel(source)}`;
     if (!emps || !emps.length) {
       container.innerHTML = '<div class="empty-state">暂无成员，请先添加</div>';
       return;
     }
 
-    container.innerHTML = buildMemberDepartmentBlocks(emps);
+    const monthlyData = new Map(summary.flatMap(dept => dept.employees).map(emp => [emp.emp_id, emp]));
+    container.innerHTML = buildMemberDepartmentBlocks(emps, monthlyData);
+    container.scrollTop = previousScroll;
+  } catch (error) {
+    if (loadVersion === memberLoadVersion) {
+      container.innerHTML = '<div class="empty-state">人员或月度数据加载失败，请重新进入人员管理页</div>';
+      document.getElementById('personnelPeriod').textContent = '';
+    }
   } finally {
     finishRefresh();
   }
@@ -74,7 +93,7 @@ function compareMemberNamesByUnicode(aName, bName) {
   return aChars.length - bChars.length;
 }
 
-function buildMemberDepartmentBlocks(emps) {
+function buildMemberDepartmentBlocks(emps, monthlyData = new Map()) {
   const groups = [];
   const groupMap = new Map();
   emps.forEach(emp => {
@@ -100,7 +119,7 @@ function buildMemberDepartmentBlocks(emps) {
         data-dept-id="${group.dept_id}"
         ondragover="onMemberGroupDragOver(event)"
         ondrop="onMemberGroupDrop(event)">
-        ${group.employees.map(emp => buildMemberCard(emp)).join('')}
+        ${group.employees.map(emp => buildMemberCard(emp, monthlyData.get(emp.id))).join('')}
       </div>
     </div>
   `).join('');
@@ -138,26 +157,25 @@ async function sortMembersByName(direction) {
   await loadMembers({ animate: false });
 }
 
-function buildMemberCard(emp) {
+function buildMemberCard(emp, monthly = {}) {
   return `
     <div class="member-card" data-emp-id="${emp.id}" data-dept-id="${emp.dept_id}"
+      role="button" tabindex="0" aria-label="编辑${escHtml(emp.name)}"
+      onclick="safeShowEditMemberModal(${emp.id}, event)"
+      onkeydown="onMemberCardKeyDown(${emp.id}, event)"
+      draggable="true" ondragstart="onMemberDragStart(event)"
       ondragover="onMemberDragOver(event)"
       ondragleave="onMemberDragLeave(event)"
       ondrop="onMemberDrop(event)"
       ondragend="onMemberDragEnd(event)">
-      <div class="member-card-toolbar"><span class="member-drag-handle" draggable="true"
-        ondragstart="onMemberDragStart(event)"
-        ondragend="onMemberDragEnd(event)"
-        title="按住拖拽调整同部门内顺序">⋮</span>
-      <input type="checkbox" class="member-check" value="${emp.id}" aria-label="选择${escHtml(emp.name)}" onchange="updateBatchDelBtn()"></div>
       <div class="member-card-info">
-        <div class="member-card-title"><button class="member-name member-list-name-color" onclick="safeShowEditMemberModal(${emp.id}, event)" title="编辑人员">${escHtml(emp.name)}</button>
+        <div class="member-card-title"><span class="member-name member-list-name-color">${escHtml(emp.name)}</span>
         <span class="member-gender-badge" title="${escHtml(emp.gender)}">${emp.gender === '女' ? '♀' : '♂'}</span></div>
         <span class="dept-sub">${escHtml(emp.sub_dept_name)}</span>
       </div>
-      <div class="member-card-actions">
-        <button class="btn btn-sm btn-primary" onclick="navigateToMemberDetail(${emp.id})">详情</button>
-        <button class="btn btn-sm btn-danger" onclick="delMember(${emp.id})">删除</button>
+      <div class="member-monthly-stats">
+        <div><span>做货对数</span><strong class="member-pairs">${Number(monthly.pairs) || 0}<small> 对</small></strong></div>
+        <div><span>工资</span><strong class="member-wage" title="含增扣，与总工资表一致">¥${fmt(monthly.total)}</strong></div>
       </div>
     </div>
   `;
@@ -171,12 +189,19 @@ function safeShowEditMemberModal(empId, event) {
   showEditMemberModal(empId);
 }
 
+function onMemberCardKeyDown(empId, event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  safeShowEditMemberModal(empId, event);
+}
+
 function onMemberDragStart(event) {
   const card = event.currentTarget.closest('.member-card');
   if (!card) return;
   event.stopPropagation();
   memberDraggingId = parseInt(card.dataset.empId, 10);
   memberDraggingDeptId = parseInt(card.dataset.deptId, 10);
+  memberSuppressClickUntil = Date.now() + 300;
   card.classList.add('dragging');
   event.dataTransfer.effectAllowed = 'move';
   event.dataTransfer.setData('text/plain', String(memberDraggingId));
@@ -215,6 +240,7 @@ function onMemberGroupDrop(event) {
 }
 
 function onMemberDragEnd(event) {
+  memberSuppressClickUntil = Date.now() + 300;
   const card = event.currentTarget.closest('.member-card') || event.currentTarget;
   card.classList.remove('dragging');
   clearMemberDragState();
@@ -257,45 +283,6 @@ async function applyMemberDrop(targetDeptId, targetEmpId) {
   } else {
     showToast(result?.error || '保存成员顺序失败', 'error');
     await loadMembers({ animate: false });
-  }
-}
-
-function toggleSelectAllMembers() {
-  const checked = document.getElementById('memberSelectAll').checked;
-  document.querySelectorAll('.member-check').forEach(cb => { cb.checked = checked; });
-  updateBatchDelBtn();
-}
-
-function updateBatchDelBtn() {
-  const checked = document.querySelectorAll('.member-check:checked');
-  const btn = document.getElementById('batchDelBtn');
-  if (!btn) return;
-  btn.style.display = checked.length > 0 ? 'inline-flex' : 'none';
-  if (checked.length > 0) {
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg> 批量删除 (${checked.length})`;
-  }
-}
-
-async function batchDeleteMembers() {
-  const checked = document.querySelectorAll('.member-check:checked');
-  if (!checked.length) return;
-
-  const ids = Array.from(checked).map(cb => parseInt(cb.value, 10));
-  const names = ids.map(id => _state.employees.find(e => e.id === id)?.name).filter(Boolean);
-  if (!confirm(`确定要删除以下成员吗？\n${names.join('、')}\n\n此操作不可恢复。`)) return;
-
-  let ok = 0;
-  let fail = 0;
-  for (const id of ids) {
-    const r = await del(`/api/employees/${id}`);
-    if (r && r.success !== false) ok += 1;
-    else fail += 1;
-  }
-
-  showToast(`成功删除 ${ok} 人${fail ? `，失败 ${fail} 人` : ''}`, ok > 0 ? 'success' : 'error');
-  if (ok > 0) {
-    document.getElementById('memberSelectAll').checked = false;
-    await loadMembers();
   }
 }
 
@@ -481,7 +468,10 @@ async function showEditMemberModal(empId) {
         <div class="form-group"><label>大部门</label><select id="m-dept" onchange="onDeptChange('m')">${depts.map(d => `<option value="${d.id}"${d.id === emp.dept_id ? ' selected' : ''}>${escHtml(d.name)}</option>`).join('')}</select></div>
         <div class="form-group"><label>小部门</label><select id="m-subdept">${subs.filter(s => s.dept_id === emp.dept_id).map(s => `<option value="${s.id}"${s.id === emp.sub_dept_id ? ' selected' : ''}>${escHtml(s.name)}</option>`).join('')}</select></div>
       </div>
-      <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="doEditMember(${empId})">保存</button></div>
+      <div class="member-editor-actions">
+        <div>${_currentView === 'members' ? `<button class="btn btn-secondary" onclick="closeModal();navigateToMemberDetail(${empId})">做货明细</button><button class="btn btn-danger" onclick="delMember(${empId})">删除人员</button>` : ''}</div>
+        <div><button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="doEditMember(${empId})">保存</button></div>
+      </div>
     `);
     document.getElementById('m-name').focus();
   } finally { memberEditorLoading = false; }
@@ -513,9 +503,11 @@ async function doEditMember(empId) {
 
 async function delMember(empId) {
   if (!confirm('确认删除该成员？')) return;
-  await del(`/api/employees/${empId}`);
+  const result = await del(`/api/employees/${empId}`);
+  if (!result?.ok) return toast(result?.error || '删除失败', 'error');
+  closeModal();
   toast('已删除', 'info');
-  loadMembers();
+  await loadMembers({ animate: false });
 }
 
 document.getElementById('memberYear').addEventListener('change', loadMembers);

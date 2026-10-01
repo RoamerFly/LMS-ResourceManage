@@ -115,7 +115,7 @@ async function _doNavigateTo(view) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   const navEl = document.querySelector(`.nav-item[data-view="${view}"]`);
   if (navEl) navEl.classList.add('active');
-  document.querySelectorAll('#minimalNav button').forEach(button => {
+  document.querySelectorAll('#minimalNav button, #minimalSettingsBtn').forEach(button => {
     const active = button.dataset.view === view;
     button.classList.toggle('active', active);
     button.setAttribute('aria-current', active ? 'page' : 'false');
@@ -200,7 +200,7 @@ async function _doNavigateToMemberDetail(empId) {
   await saveLeavingSpreadsheet('member-detail');
   _currentView = 'member-detail';
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.querySelectorAll('#minimalNav button').forEach(button => {
+  document.querySelectorAll('#minimalNav button, #minimalSettingsBtn').forEach(button => {
     const active = button.dataset.view === 'members';
     button.classList.toggle('active', active);
     button.setAttribute('aria-current', active ? 'page' : 'false');

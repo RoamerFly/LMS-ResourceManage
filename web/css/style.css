@@ -2163,7 +2163,7 @@ body.sheet-range-dragging * {
 .department-create-form input { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--text); }
 
 /* 极简模式：整页快捷计算主页与顶部三张导航卡片 */
-.minimal-home, .minimal-nav { display: none; }
+.minimal-home, .minimal-nav, .minimal-settings { display: none; }
 body.minimal-mode > .sidebar { display: none; }
 body.minimal-mode .main { width: 100%; min-width: 0; }
 body.minimal-mode .topbar { height: 78px; padding: 8px 22px; display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; background: var(--bg); border-bottom: none; }
@@ -2171,11 +2171,15 @@ body.minimal-mode .topbar-title, body.minimal-mode .topbar-hint, body.minimal-mo
 body.minimal-mode .minimal-home { display: block; justify-self: start; background: none; border: none; color: var(--text); font: inherit; font-size: var(--font-size-20); font-weight: 700; cursor: pointer; text-align: left; }
 body.minimal-mode .minimal-home span { color: var(--primary); }
 body.minimal-mode .minimal-nav { display: flex; align-items: center; justify-content: center; gap: 12px; }
-body.minimal-mode .minimal-nav button { border: 1px solid var(--border); border-radius: 16px; min-width: 112px; height: 46px; padding: 0 20px; background: var(--card-bg); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; box-shadow: 0 3px 9px rgba(0,0,0,.05); transition: background .15s, transform .15s; }
-body.minimal-mode .minimal-nav button:hover { transform: translateY(-1px); border-color: var(--primary); }
-body.minimal-mode .minimal-nav button.active { background: var(--primary-light); border-color: var(--primary); color: var(--primary-dark); }
-body.minimal-mode .minimal-nav .minimal-salary { min-width: 142px; height: 58px; border-radius: 18px; font-size: var(--font-size-16); background: var(--primary); color: white; border-color: var(--primary); }
-body.minimal-mode .minimal-nav .minimal-salary.active { background: var(--primary-dark); color: white; }
+body.minimal-mode .minimal-nav button { --nav-bg: #dbeafe; --nav-accent: #2563eb; position: relative; border: 2px solid transparent; border-radius: 16px; min-width: 112px; height: 46px; padding: 0 20px; background: var(--nav-bg); color: var(--nav-accent); font: inherit; font-weight: 600; cursor: pointer; box-shadow: 0 3px 9px rgba(0,0,0,.04); transition: box-shadow .15s, transform .15s, border-color .15s; }
+body.minimal-mode .minimal-nav .minimal-calculate { --nav-bg: #ede9fe; --nav-accent: #7c3aed; min-width: 152px; height: 58px; border-radius: 18px; font-size: var(--font-size-16); }
+body.minimal-mode .minimal-nav .minimal-salary { --nav-bg: #dcfce7; --nav-accent: #15803d; }
+body.minimal-mode .minimal-nav button:hover { transform: translateY(-2px); box-shadow: 0 5px 14px rgba(0,0,0,.09); }
+body.minimal-mode .minimal-nav button.active { border-color: var(--nav-accent); box-shadow: 0 4px 12px color-mix(in srgb, var(--nav-accent) 18%, transparent); }
+body.minimal-mode .minimal-nav button.active::after { content: ''; position: absolute; bottom: 5px; height: 3px; left: 32%; right: 32%; border-radius: 4px; background: var(--nav-accent); }
+body.minimal-mode .minimal-nav button:focus-visible { outline: 2px solid var(--nav-accent); outline-offset: 3px; }
+body.minimal-mode .minimal-settings { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-left: 8px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-muted); cursor: pointer; }
+body.minimal-mode .minimal-settings:hover, body.minimal-mode .minimal-settings.active { background: var(--card-bg); border-color: var(--primary); color: var(--primary); }
 body.minimal-mode .topbar-date-selector { justify-self: end; margin: 0; }
 body.minimal-mode .content { padding: 6px 10px 10px; }
 body.minimal-mode #view-quickcalc .qc-card { border-radius: 14px; }
@@ -2188,29 +2192,45 @@ body.minimal-mode .btn-back-home { border-radius: 12px; }
 @media (max-width: 760px) {
   body.minimal-mode .topbar { grid-template-columns: 1fr; height: auto; padding: 10px; }
   body.minimal-mode .minimal-home, body.minimal-mode .topbar-date-selector { display: none; }
+  body.minimal-mode .topbar-date-selector { display: flex; position: absolute; right: 8px; top: 5px; padding: 0; border: none; background: transparent; }
+  body.minimal-mode .topbar-date-selector > :not(.minimal-settings) { display: none; }
   body.minimal-mode .minimal-nav { grid-column: 1; gap: 8px; }
   body.minimal-mode .minimal-nav button { min-width: 0; padding: 0 12px; }
-  body.minimal-mode .minimal-nav .minimal-salary { min-width: 120px; }
+  body.minimal-mode .minimal-nav .minimal-calculate { min-width: 120px; }
+  body.minimal-mode .minimal-settings { display: inline-flex; }
 }
 @media print {
-  body.minimal-mode .minimal-home, body.minimal-mode .minimal-nav { display: none !important; }
+  body.minimal-mode .minimal-home, body.minimal-mode .minimal-nav, body.minimal-mode .minimal-settings { display: none !important; }
 }
 
 /* 人员管理：按部门排列的圆角人员卡片 */
+.main:has(#view-members.active) { overflow: hidden; min-width: 0; }
+.main:has(#view-members.active) .topbar { flex-shrink: 0; }
+.content:has(#view-members.active) { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+#view-members.active { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+#view-members .personnel-back { padding: 0 0 10px; flex-shrink: 0; }
+body.minimal-mode #view-members .personnel-back { display: none; }
+#view-members .personnel-card-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; margin-bottom: 0; overflow: hidden; border-radius: 20px; }
+#view-members .personnel-toolbar { flex-shrink: 0; }
+#view-members .personnel-period { color: var(--text-muted); padding: 0 2px 10px; flex-shrink: 0; font-size: var(--font-size-12); }
+#view-members #memberList { flex: 1; min-height: 0; margin-top: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding-right: 6px; }
 #view-members .member-dept-block { border: none; background: transparent; overflow: visible; }
-#view-members .member-dept-header { background: transparent; color: var(--text); padding: 12px 4px; border: none; }
+#view-members .member-dept-block { flex-shrink: 0; }
+#view-members .member-dept-header { position: sticky; top: 0; z-index: 2; display: flex; justify-content: center; background: var(--surface-muted); color: var(--text); padding: 12px 70px; border: none; border-radius: 12px; }
 #view-members .member-dept-header .dept-large { color: var(--text); }
-#view-members .member-dept-header .dept-totals { color: var(--text-muted); }
-#view-members .member-dept-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; padding: 0 0 14px; }
-#view-members .member-card { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 10px; min-width: 0; padding: 14px 16px; border-radius: 18px; background: var(--card-bg); border: 1px solid var(--border); }
-#view-members .member-card:hover { border-color: var(--primary); box-shadow: 0 4px 14px rgba(0,0,0,.06); }
-#view-members .member-card-toolbar { display: flex; align-items: center; justify-content: space-between; }
-#view-members .member-drag-handle { font-size: var(--font-size-16); line-height: 16px; padding: 0 5px; }
+#view-members .member-dept-header .dept-totals { position: absolute; right: 18px; color: var(--text-muted); }
+#view-members .member-dept-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 16px; padding: 16px 2px 20px; }
+#view-members .member-card { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 22px; min-width: 0; min-height: 180px; padding: 22px; border-radius: 20px; background: var(--card-bg); border: 1px solid var(--border); cursor: pointer; user-select: none; transition: border-color .15s, box-shadow .15s; }
+#view-members .member-card:hover, #view-members .member-card:focus-visible { border-color: var(--primary); box-shadow: 0 4px 14px rgba(0,0,0,.06); outline: 2px solid var(--primary-light); outline-offset: 1px; }
+#view-members .member-card[draggable="true"] { cursor: pointer; }
 #view-members .member-card-info { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
-#view-members .member-card-title { display: flex; align-items: center; gap: 10px; }
-#view-members .member-name { display: block; padding: 0; min-width: 0; border: none; background: none; font: inherit; font-size: var(--font-size-16); font-weight: 600; text-align: left; text-decoration: none; cursor: pointer; overflow-wrap: anywhere; }
-#view-members .member-name:hover { color: var(--primary); }
-#view-members .member-card-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; }
-#view-members .member-card-actions .btn { border-radius: 9px; }
-#view-members .member-card-actions .btn-danger { background: var(--surface-muted); color: var(--danger); }
-#view-members .member-card-actions .btn-danger:hover { background: #fee2e2; }
+#view-members .member-card-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+#view-members .member-name { display: block; padding: 0; min-width: 0; font-size: var(--font-size-22); font-weight: 600; text-align: left; text-decoration: none; overflow-wrap: anywhere; }
+#view-members .member-monthly-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: auto; }
+#view-members .member-monthly-stats > div { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+#view-members .member-monthly-stats span { font-size: var(--font-size-12); color: var(--text-muted); }
+#view-members .member-monthly-stats strong { font-size: var(--font-size-20); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#view-members .member-monthly-stats small { font-size: var(--font-size-12); font-weight: normal; color: var(--text-muted); }
+#view-members .member-wage { color: var(--success); }
+.member-editor-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 18px; }
+.member-editor-actions > div { display: flex; gap: 8px; }
