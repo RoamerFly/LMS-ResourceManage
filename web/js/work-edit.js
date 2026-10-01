@@ -225,7 +225,7 @@ function renderSpreadsheet() {
         style="min-width:70px;background:var(--work-select-bg);color:var(--work-select-text);">
         <span class="column-drag-handle" draggable="true" data-emp-id="${e.id}" data-dept-id="${e.dept_id}"
           ondragstart="onWorkColumnDragStart(event)" ondragend="onWorkColumnDragEnd(event)" title="按住拖拽调整同部门内列顺序">•••</span>
-        <span class="member-list-name-color" onclick="showEmployeeDetail(${e.id})">${escHtml(e.name)}</span>
+        <span class="member-list-name-color" onclick="showEditMemberModal(${e.id})" title="编辑人员">${escHtml(e.name)}</span>
       </th>`,
         )
         .join("")}

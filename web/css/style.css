@@ -2195,3 +2195,22 @@ body.minimal-mode .btn-back-home { border-radius: 12px; }
 @media print {
   body.minimal-mode .minimal-home, body.minimal-mode .minimal-nav { display: none !important; }
 }
+
+/* 人员管理：按部门排列的圆角人员卡片 */
+#view-members .member-dept-block { border: none; background: transparent; overflow: visible; }
+#view-members .member-dept-header { background: transparent; color: var(--text); padding: 12px 4px; border: none; }
+#view-members .member-dept-header .dept-large { color: var(--text); }
+#view-members .member-dept-header .dept-totals { color: var(--text-muted); }
+#view-members .member-dept-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; padding: 0 0 14px; }
+#view-members .member-card { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 10px; min-width: 0; padding: 14px 16px; border-radius: 18px; background: var(--card-bg); border: 1px solid var(--border); }
+#view-members .member-card:hover { border-color: var(--primary); box-shadow: 0 4px 14px rgba(0,0,0,.06); }
+#view-members .member-card-toolbar { display: flex; align-items: center; justify-content: space-between; }
+#view-members .member-drag-handle { font-size: var(--font-size-16); line-height: 16px; padding: 0 5px; }
+#view-members .member-card-info { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+#view-members .member-card-title { display: flex; align-items: center; gap: 10px; }
+#view-members .member-name { display: block; padding: 0; min-width: 0; border: none; background: none; font: inherit; font-size: var(--font-size-16); font-weight: 600; text-align: left; text-decoration: none; cursor: pointer; overflow-wrap: anywhere; }
+#view-members .member-name:hover { color: var(--primary); }
+#view-members .member-card-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; }
+#view-members .member-card-actions .btn { border-radius: 9px; }
+#view-members .member-card-actions .btn-danger { background: var(--surface-muted); color: var(--danger); }
+#view-members .member-card-actions .btn-danger:hover { background: #fee2e2; }

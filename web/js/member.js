@@ -4,6 +4,7 @@
 let memberDraggingId = 0;
 let memberDraggingDeptId = 0;
 let memberSuppressClickUntil = 0;
+let memberEditorLoading = false;
 
 async function loadMembers(options = {}) {
   const { animate = true } = options;
@@ -93,7 +94,7 @@ function buildMemberDepartmentBlocks(emps) {
     <div class="dept-block member-dept-block" data-dept-id="${group.dept_id}">
       <div class="dept-block-header member-dept-header">
         <span><span class="dept-large">${escHtml(group.dept_name)}</span></span>
-        <span class="dept-totals">${group.employees.length} 名成员 · 仅支持本部门内拖拽排序</span>
+        <span class="dept-totals">${group.employees.length} 人</span>
       </div>
       <div class="member-dept-body"
         data-dept-id="${group.dept_id}"
@@ -144,20 +145,18 @@ function buildMemberCard(emp) {
       ondragleave="onMemberDragLeave(event)"
       ondrop="onMemberDrop(event)"
       ondragend="onMemberDragEnd(event)">
-      <span class="member-drag-handle" draggable="true"
+      <div class="member-card-toolbar"><span class="member-drag-handle" draggable="true"
         ondragstart="onMemberDragStart(event)"
         ondragend="onMemberDragEnd(event)"
         title="按住拖拽调整同部门内顺序">⋮</span>
-      <input type="checkbox" class="member-check" value="${emp.id}" onchange="updateBatchDelBtn()">
+      <input type="checkbox" class="member-check" value="${emp.id}" aria-label="选择${escHtml(emp.name)}" onchange="updateBatchDelBtn()"></div>
       <div class="member-card-info">
-        <span class="member-name member-list-name-color" onclick="safeShowEditMemberModal(${emp.id}, event)" title="点击编辑">${escHtml(emp.name)}</span>
-        <span class="member-gender-badge">${emp.gender === '女' ? '♀' : '♂'}</span>
-        <span class="dept-large">${escHtml(emp.dept_name)}</span>
-        <span class="dept-sub">/ ${escHtml(emp.sub_dept_name)}</span>
+        <div class="member-card-title"><button class="member-name member-list-name-color" onclick="safeShowEditMemberModal(${emp.id}, event)" title="编辑人员">${escHtml(emp.name)}</button>
+        <span class="member-gender-badge" title="${escHtml(emp.gender)}">${emp.gender === '女' ? '♀' : '♂'}</span></div>
+        <span class="dept-sub">${escHtml(emp.sub_dept_name)}</span>
       </div>
       <div class="member-card-actions">
         <button class="btn btn-sm btn-primary" onclick="navigateToMemberDetail(${emp.id})">详情</button>
-        <button class="btn btn-sm btn-secondary" onclick="showEditMemberModal(${emp.id})">编辑</button>
         <button class="btn btn-sm btn-danger" onclick="delMember(${emp.id})">删除</button>
       </div>
     </div>
@@ -453,23 +452,39 @@ async function doAddMember() {
 }
 
 async function showEditMemberModal(empId) {
-  const emp = _state.employees.find(e => e.id === empId);
-  const depts = await get('/api/departments');
-  const subs = await get('/api/sub-departments');
-  _state.departments = depts;
-  _state.subDepartments = subs;
-  openModal(`
-    <div class="modal-title">编辑人员</div>
-    <div class="form-row">
-      <div class="form-group"><label>姓名</label><input id="m-name" type="text" value="${escHtml(emp.name)}"></div>
-      <div class="form-group"><label>性别</label><select id="m-gender"><option value="男"${emp.gender === '男' ? ' selected' : ''}>男</option><option value="女"${emp.gender === '女' ? ' selected' : ''}>女</option></select></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>大部门</label><select id="m-dept" onchange="onDeptChange('m')">${depts.map(d => `<option value="${d.id}"${d.id === emp.dept_id ? ' selected' : ''}>${escHtml(d.name)}</option>`).join('')}</select></div>
-      <div class="form-group"><label>小部门</label><select id="m-subdept">${subs.filter(s => s.dept_id === emp.dept_id).map(s => `<option value="${s.id}"${s.id === emp.sub_dept_id ? ' selected' : ''}>${escHtml(s.name)}</option>`).join('')}</select></div>
-    </div>
-    <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="doEditMember(${empId})">保存</button></div>
-  `);
+  if (memberEditorLoading) return;
+  memberEditorLoading = true;
+  try {
+    // 表头打开人员弹窗前提交当前数字；编辑人员时也能安全刷新表格。
+    if (_currentView === 'quickcalc') {
+      await window.LmsSpreadsheet?.flush('quick-calc');
+      clearTimeout(window._qcAutoSaveTimer);
+      await autoSaveQc();
+    } else if (_currentView === 'work') {
+      await window.LmsSpreadsheet?.flush('work-edit');
+      clearTimeout(window._weAutoSaveTimer);
+      await autoSaveWorkRecords();
+    }
+    const [employees, depts, subs] = await Promise.all([get('/api/employees'), get('/api/departments'), get('/api/sub-departments')]);
+    const emp = employees.find(e => e.id === empId);
+    if (!emp) return toast('该人员已不存在，请刷新页面', 'error');
+    _state.employees = employees;
+    _state.departments = depts;
+    _state.subDepartments = subs;
+    openModal(`
+      <div class="modal-title">编辑人员</div>
+      <div class="form-row">
+        <div class="form-group"><label>姓名</label><input id="m-name" type="text" value="${escHtml(emp.name)}"></div>
+        <div class="form-group"><label>性别</label><select id="m-gender"><option value="男"${emp.gender === '男' ? ' selected' : ''}>男</option><option value="女"${emp.gender === '女' ? ' selected' : ''}>女</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>大部门</label><select id="m-dept" onchange="onDeptChange('m')">${depts.map(d => `<option value="${d.id}"${d.id === emp.dept_id ? ' selected' : ''}>${escHtml(d.name)}</option>`).join('')}</select></div>
+        <div class="form-group"><label>小部门</label><select id="m-subdept">${subs.filter(s => s.dept_id === emp.dept_id).map(s => `<option value="${s.id}"${s.id === emp.sub_dept_id ? ' selected' : ''}>${escHtml(s.name)}</option>`).join('')}</select></div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="doEditMember(${empId})">保存</button></div>
+    `);
+    document.getElementById('m-name').focus();
+  } finally { memberEditorLoading = false; }
 }
 
 async function doEditMember(empId) {
@@ -482,8 +497,15 @@ async function doEditMember(empId) {
   if (r.ok) {
     closeModal();
     toast('保存成功', 'success');
-    if (getCurrentView() === 'member-detail') loadMemberDetail(empId);
-    else loadMembers();
+    const view = getCurrentView();
+    if (view === 'quickcalc') {
+      const wasWage = _qcState.qcViewMode === 'wage';
+      await initQuickCalc();
+      if (wasWage) await qcToggleViewMode();
+    } else if (view === 'work') await loadWorkRecords();
+    else if (view === 'member-detail') await loadMemberDetail(empId);
+    else if (view === 'salary') await loadSalary({ animate: false });
+    else await loadMembers({ animate: false });
   } else {
     toast('保存失败', 'error');
   }

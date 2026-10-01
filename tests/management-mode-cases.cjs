@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
-module.exports = async ({evaluate,call,click,key,delay,restartBackend}) => {
+module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) => {
   await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   const waitFor = async expression => {
     for (let i=0;i<100;i++) {
@@ -13,6 +13,19 @@ module.exports = async ({evaluate,call,click,key,delay,restartBackend}) => {
     throw new Error(`页面未就绪：${expression}`);
   };
   const loaded = () => waitFor(`document.getElementById('loadingOverlay')?.style.display==='none'`);
+  const cellPoint = (wrap,row,col) => evaluate(`(() => {const rect=LmsSpreadsheet.getInstance('${wrap}').book.getActiveSheet().getRange(${row},${col}).getCellRect();const canvas=Array.from(document.querySelectorAll('#${wrap} canvas'),canvas=>canvas.getBoundingClientRect()).sort((a,b)=>b.width*b.height-a.width*a.height)[0];return {x:canvas.x+rect.x+rect.width/2,y:canvas.y+rect.y+rect.height/2};})()`);
+  const cellClick = async (wrap,row,col,modifiers=0) => {
+    const point=await cellPoint(wrap,row,col);
+    await mouse('mousePressed',point,{button:'left',buttons:1,clickCount:1,modifiers});
+    await mouse('mouseReleased',point,{button:'left',buttons:0,clickCount:1,modifiers});
+    await delay(80);
+  };
+  const type = async text => {
+    for (const char of text) {
+      await call('Input.dispatchKeyEvent',{type:'keyDown',key:char,windowsVirtualKeyCode:char.charCodeAt(0),text:char});
+      await call('Input.dispatchKeyEvent',{type:'keyUp',key:char,windowsVirtualKeyCode:char.charCodeAt(0)});
+    }
+  };
   const screenshot = async name => {
     const shot = await call('Page.captureScreenshot',{format:'png'});
     const file = path.join(os.tmpdir(),name+'.png');
@@ -24,6 +37,13 @@ module.exports = async ({evaluate,call,click,key,delay,restartBackend}) => {
   assert.equal(await evaluate(`document.querySelector('.nav-item[data-view="departments"],.nav-item[data-view="prices"]')`),null,'独立部门与单价导航已合并');
   await click('.nav-item[data-view="members"]');
   await waitFor(`document.querySelector('#memberList .member-card') !== null`);
+  const cards = await evaluate(`(() => {const cards=Array.from(document.querySelectorAll('.member-card')).slice(0,2);return cards.map(card=>({x:card.getBoundingClientRect().x,y:card.getBoundingClientRect().y,width:card.getBoundingClientRect().width,radius:parseFloat(getComputedStyle(card).borderRadius)}));})()`);
+  assert.ok(cards[0].y===cards[1].y && cards[1].x>cards[0].x && cards[0].width<320 && cards[0].radius>=16,'人员按圆角卡片多列展示');
+  assert.equal(await evaluate(`document.querySelector('.member-card-actions').textContent.includes('编辑')`),false,'移除重复编辑按钮');
+  await click('.member-card[data-emp-id="1"] .member-name');
+  await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.getElementById('m-name')?.value==='张三'`);
+  await click('#modalBox .btn-secondary');
+  await screenshot('lms-personnel-rounded-cards');
   const centered = await evaluate(`(() => {const button=document.getElementById('personnelDeptBtn').getBoundingClientRect();const bar=document.querySelector('.personnel-toolbar').getBoundingClientRect();return Math.abs(button.x+button.width/2-bar.x-bar.width/2);})()`);
   assert.ok(centered<2,`部门入口居中 ${centered}px`);
   await click('#personnelDeptBtn');
@@ -65,12 +85,28 @@ module.exports = async ({evaluate,call,click,key,delay,restartBackend}) => {
   await waitFor(`Array.from(document.querySelectorAll('#priceTable input[type="number"]')).some(input=>Number(input.value)===4.25)`);
   await screenshot('lms-orders-prices-merged');
 
+  await click('.nav-item[data-view="work"]');
+  await waitFor(`LmsSpreadsheet.getInstance('spreadsheetWrap')?.ready`);
+  await waitFor(`(() => {const instance=LmsSpreadsheet.getInstance('spreadsheetWrap');const sheet=instance.book.save().sheets.work;const rect=instance.book.getActiveSheet().getRange(2,2).getCellRect();return rect.x===sheet.rowHeader.width+sheet.columnData[0].w+sheet.columnData[1].w && rect.width===sheet.columnData[2].w;})()`);
+  await cellClick('spreadsheetWrap',2,2);
+  await waitFor(`document.activeElement?.getAttribute('data-u-comp')==='editor'`);
+  await type('7');
+  await waitFor(`LmsSpreadsheet.getInstance('spreadsheetWrap').book.isCellEditing()`);
+  await cellClick('spreadsheetWrap',1,2);
+  await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.querySelector('#modalBox .modal-title')?.textContent==='编辑人员'`);
+  assert.equal(await evaluate(`get('/api/work-records?year=2026&month=9').then(data=>data.records.find(row=>row.emp_id===1).quantity)`),7,'点击做货表头先提交并保存当前数字');
+  await evaluate(`document.getElementById('m-name').value='张三甲'`);
+  await click('#modalBox button[onclick="doEditMember(1)"]');
+  await waitFor(`LmsSpreadsheet.getInstance('spreadsheetWrap')?.book.getActiveSheet().getRange(1,2).getValue()==='张三甲'`);
+  assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet().getRange(2,2).getValue())`),7,'编辑人员后做货数据仍保留');
+
   // 保留常规模式原有来源，极简模式始终使用快捷计算。
   await evaluate(`toggleQcSalary(false)`);
   await click('.nav-item[data-view="settings"]');
   await waitFor(`_currentView==='settings'`);
   await click('label:has(#s-minimalMode)');
   await waitFor(`_currentView==='quickcalc' && LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready`);
+  await delay(400);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sidebar')).display`),'none','极简模式完全删除左侧导航占用');
   assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('#minimalNav button'),button=>button.textContent)`),['人员管理','总工资表','系统设置'],'顶部只有三个导航卡片');
   const header = await evaluate(`(() => {const nav=document.getElementById('minimalNav').getBoundingClientRect();const buttons=Array.from(nav ? document.querySelectorAll('#minimalNav button'):[],button=>button.getBoundingClientRect());return {offset:Math.abs(nav.x+nav.width/2-innerWidth/2),salary:buttons[1].width,other:buttons[0].width,height:buttons[1].height,otherHeight:buttons[0].height,main:document.querySelector('.main').getBoundingClientRect().width};})()`);
@@ -81,6 +117,36 @@ module.exports = async ({evaluate,call,click,key,delay,restartBackend}) => {
   const qtyCol = await evaluate(`Array.from(LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.get('dept-1').cells.values()).find(cell=>cell.input?.dataset.key==='1_0,1').col`);
   await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${priceCol}).setValue(2.75)`);
   await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${qtyCol}).setValue(88)`);
+  await cellClick('qcDeptTablesWrap',1,qtyCol);
+  await key('ArrowUp',38);
+  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'键盘移动到姓名不弹出编辑');
+  await cellClick('qcDeptTablesWrap',0,qtyCol,8);
+  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'Shift选取姓名不弹出编辑');
+  const from=await cellPoint('qcDeptTablesWrap',0,qtyCol);
+  const to=await cellPoint('qcDeptTablesWrap',0,qtyCol+1);
+  await mouse('mousePressed',from,{button:'left',buttons:1,clickCount:1});
+  await mouse('mouseMoved',to,{button:'left',buttons:1});
+  await mouse('mouseReleased',to,{button:'left',buttons:0,clickCount:1});
+  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'拖选表头不误弹人员编辑');
+  await cellClick('qcDeptTablesWrap',1,qtyCol);
+  await type('88');
+  await cellClick('qcDeptTablesWrap',0,qtyCol);
+  await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.getElementById('m-name')?.value==='张三甲'`);
+  await evaluate(`document.getElementById('m-name').value='张三乙'`);
+  await click('#modalBox button[onclick="doEditMember(1)"]');
+  await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.book.getActiveSheet().getRange(0,${qtyCol}).getValue()==='张三乙'`);
+  assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${qtyCol}).getValue())`),88,'快捷表头编辑人员后数据与姓名同步保留');
+  await evaluate('qcToggleViewMode()');
+  await delay(400);
+  const wageBook = await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getId()`);
+  await cellClick('qcDeptTablesWrap',0,qtyCol);
+  await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.getElementById('m-name')?.value==='张三乙'`);
+  await screenshot('lms-spreadsheet-personnel-edit');
+  await evaluate(`document.getElementById('m-gender').value='女'`);
+  await click('#modalBox button[onclick="doEditMember(1)"]');
+  await waitFor(`!document.getElementById('modalOverlay').classList.contains('show') && !_qcViewModeBusy && _qcState.qcViewMode==='wage' && LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.book.getId()!==${JSON.stringify(wageBook)}`);
+  assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${qtyCol}).getValue())`),242,'工资视角编辑人员后仍保留工资显示与原数据');
+  await evaluate('qcToggleViewMode()');
   await click('#minimalNav [data-view="salary"]');
   await waitFor(`_currentView==='salary' && document.getElementById('salaryContent').textContent.includes('242.00')`);
   assert.equal(await evaluate(`get('/api/quick-calc-save?year=2026&month=9').then(data=>data.qty_data['1_0,1'])`),88,'顶部导航离开主页先保存快捷计算数据');
@@ -118,5 +184,5 @@ module.exports = async ({evaluate,call,click,key,delay,restartBackend}) => {
   await click('.nav-item[data-view="overview"]');
   await waitFor(`_currentView==='overview'`);
   assert.equal(await evaluate(`document.querySelector('.overview-card[data-view="departments"],.overview-card[data-view="prices"]')`),null,'主页不重复显示已合并功能');
-  console.log('PASS: 人员与部门树新增、订单单价合并及保存、极简三卡片导航/全宽主页/工资来源/退出恢复/SQLite重启');
+  console.log('PASS: 人员圆角卡片/姓名编辑、两种表头点击编辑及数据保留/工资视角恢复/拖选与键盘不误触、部门树/订单单价/极简模式/SQLite重启');
 };
