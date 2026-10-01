@@ -219,7 +219,7 @@
       document.body.append(element);
       return { element, left, top, width, height, cell };
     };
-    const headerAt = (meta, x, y) => {
+    const columnAt = (meta, x, y) => {
       const canvas = canvasRect();
       if (!canvas || x < canvas.left || x > canvas.right || y < canvas.top || y > canvas.bottom) return null;
       const sheet = book.getActiveSheet();
@@ -227,7 +227,7 @@
       for (const cell of headers(meta)) {
         const rect = sheet.getRange(cell.row, cell.col).getCellRect();
         if (rect && x >= canvas.x + rect.x && x <= canvas.x + rect.x + rect.width &&
-          y >= canvas.y + rect.y && y <= canvas.y + rect.y + rect.height) return { cell, rect, canvas };
+          y >= canvas.y + rect.y) return { cell, rect, canvas };
       }
       return null;
     };
@@ -242,7 +242,7 @@
       host.classList.remove('lms-column-dragging');
     };
     const paint = (x, y) => {
-      const hit = headerAt(press.meta, x, y);
+      const hit = columnAt(press.meta, x, y);
       const allowed = canSwapColumns(press.source, hit?.cell);
       press.target = allowed ? hit.cell : null;
       ghost.element.style.transform = `translate(${x - press.x}px, ${y - press.y}px)`;
@@ -259,14 +259,14 @@
         if (counterpart) counterpart.element.style.transform = `translateX(${ghost.left - counterpart.left}px)`;
       } else { counterpart?.element.remove(); counterpart = null; }
       const kind = columnKind(press.source) === 'price' ? '单价' : '人员';
-      preview.textContent = !hit ? `拖到同部门${kind}列表头上换位` : !allowed ? `只能在同部门的${kind}列之间换位` :
+      preview.textContent = !hit ? `拖到同部门${kind}列的单元格上换位` : !allowed ? `只能在同部门的${kind}列之间换位` :
         `${textValue(press.source.td)} → ${textValue(hit.cell.td)}`;
       preview.style.left = `${Math.min(x + 14, innerWidth - 240)}px`;
       preview.style.top = `${Math.min(y + 18, innerHeight - 48)}px`;
       marker.hidden = !hit;
       if (hit) {
         Object.assign(marker.style, { left: `${hit.canvas.x + hit.rect.x}px`, top: `${hit.canvas.y + hit.rect.y}px`,
-          width: `${hit.rect.width}px`, height: `${hit.rect.height}px` });
+          width: `${hit.rect.width}px`, height: `${hit.canvas.bottom - hit.canvas.y - hit.rect.y}px` });
         marker.classList.toggle('invalid', !allowed);
       }
     };
@@ -329,6 +329,7 @@
     instance.disposables.push(api.addEvent(api.Event.CellPointerDown, event => {
       if (!press || press.active) return;
       const meta = instance.sheets.get(event.worksheet.getSheetId());
+      // 从写着“XX单价”或人员姓名的业务表头启动，数据格保留普通选格和编辑行为。
       const source = meta?.cells.get(`${event.row},${event.column}`);
       if (!columnKind(source) || event.row !== meta.headerRows - 1) return;
       Object.assign(press, { meta, source });

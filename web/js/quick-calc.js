@@ -172,7 +172,7 @@ function renderQcDeptTables() {
       html += '<th style="background:#ede9fe;color:#5b21b6">订单数量</th>';
       html += '<th style="background:#fef3c7;color:#92400e">已做数量</th>';
       for (const sub of deptSubs) {
-        html += `<th data-price-id="${sub.id}" data-dept-id="${dept.id}" title="长按拖动调整单价列顺序"
+        html += `<th data-price-id="${sub.id}" data-dept-id="${dept.id}" title="长按此单价表头单元格可拖动调整顺序"
           style="min-width:70px;width:70px;background:#d1fae5;color:#065f46;position:sticky;top:0;z-index:10;text-align:center;">
           ${escHtml(sub.name)}<br><span class="qc-th-subtext">单价</span>
         </th>`;

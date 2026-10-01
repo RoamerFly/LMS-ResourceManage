@@ -32,11 +32,11 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
     await delay(80);
   };
   let dragScreenshotSaved = false;
-  const longColumnDrag = async (wrap,row,fromCol,toCol,cancel=false) => {
-    const from=await cellPoint(wrap,row,fromCol), to=await cellPoint(wrap,row,toCol);
+  const longColumnDrag = async (wrap,row,fromCol,toCol,cancel=false,toRow=row) => {
+    const from=await cellPoint(wrap,row,fromCol), to=await cellPoint(wrap,toRow,toCol);
     await mouse('mousePressed',from,{button:'left',buttons:1,clickCount:1});
     await delay(550);
-    assert.ok(await evaluate(`document.querySelector('.lms-column-drag-preview')!==null`),'长按进入人员列换位');
+    assert.ok(await evaluate(`document.querySelector('.lms-column-drag-preview')!==null`),'长按单元格进入业务列换位');
     const originalGhost = await evaluate(`(() => {const el=document.querySelector('.lms-column-drag-ghost');const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,pixels:el.querySelector('canvas').height};})()`);
     assert.ok(originalGhost.height>100 && originalGhost.pixels>=originalGhost.height,'拖动预览包含姓名和可见数据整列');
     await mouse('mouseMoved',to,{button:'left',buttons:1});
@@ -214,18 +214,24 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   const otherPriceId = await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.get('dept-1').cells.get('0,${otherPriceCol}').td.dataset.priceId`);
   await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${otherPriceCol}).setValue(1.25);void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setColumnWidth(${priceCol},137);void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setColumnWidth(${otherPriceCol},111)`);
   await delay(200);
-  await longColumnDrag('qcDeptTablesWrap',0,priceCol,otherPriceCol);
+  const priceDataPoint = await cellPoint('qcDeptTablesWrap',1,priceCol);
+  await mouse('mousePressed',priceDataPoint,{button:'left',buttons:1,clickCount:1});
+  await delay(550);
+  assert.equal(await evaluate(`document.querySelector('.lms-column-drag-preview')`),null,'长按单价数据格不进入换列，只有XX单价表头触发');
+  await mouse('mouseReleased',priceDataPoint,{button:'left',buttons:0,clickCount:1});
+  await longColumnDrag('qcDeptTablesWrap',0,priceCol,otherPriceCol,false,4);
   await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.get('dept-1').cells.get('0,${otherPriceCol}')?.td.dataset.priceId==='1'`);
-  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${otherPriceCol}).getRawValue()`),2.75,'单价整列换位后数据跟随小部门');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${otherPriceCol}).getRawValue()`),2.75,'从XX单价表头长按拖到另一列空格松开后实际换位，数据跟随小部门');
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${priceCol}).getRawValue()`),1.25,'目标单价数据移动到原位置');
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.save().sheets['dept-1'].columnData[${otherPriceCol}].w`),137,'单价列宽跟随来源');
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.save().sheets['dept-1'].columnData[${priceCol}].w`),111,'单价目标列宽也跟随交换');
   assert.equal(await evaluate(`_qcDeptRows['1_0'][1]`),2.75,'工资单价依然绑定小部门ID');
+  assert.equal(await evaluate(`getQcUsedRowCount(1)`),1,'拖到另一列空白数据格不会激活新行');
   const savedPriceOrder = await evaluate(`get('/api/app-settings/manualPriceOrder.quickcalc.1').then(result=>result.value)`);
   assert.equal(JSON.parse(savedPriceOrder)[0],1,'单价换位顺序写入数据库');
-  await longColumnDrag('qcDeptTablesWrap',0,otherPriceCol,qtyCol);
+  await longColumnDrag('qcDeptTablesWrap',0,otherPriceCol,qtyCol,false,2);
   assert.equal(await evaluate(`get('/api/app-settings/manualPriceOrder.quickcalc.1').then(result=>result.value)`),savedPriceOrder,'单价不能与人员列混换');
-  await longColumnDrag('qcDeptTablesWrap',0,otherPriceCol,priceCol,true);
+  await longColumnDrag('qcDeptTablesWrap',0,otherPriceCol,priceCol,true,2);
   assert.equal(await evaluate(`get('/api/app-settings/manualPriceOrder.quickcalc.1').then(result=>result.value)`),savedPriceOrder,'Escape取消单价列交换');
   await cellClick('qcDeptTablesWrap',1,qtyCol);
   await key('ArrowUp',38);
@@ -260,9 +266,9 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await evaluate('qcToggleViewMode()');
   await delay(400);
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${otherPriceCol}).getRawValue()`),2.75,'工资视角单价顺序和显示保持');
-  await longColumnDrag('qcDeptTablesWrap',0,otherPriceCol,priceCol);
+  await longColumnDrag('qcDeptTablesWrap',0,otherPriceCol,priceCol,false,3);
   await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.get('dept-1').cells.get('0,${priceCol}')?.td.dataset.priceId==='1'`);
-  await longColumnDrag('qcDeptTablesWrap',0,priceCol,otherPriceCol);
+  await longColumnDrag('qcDeptTablesWrap',0,priceCol,otherPriceCol,false,4);
   await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.get('dept-1').cells.get('0,${otherPriceCol}')?.td.dataset.priceId==='1'`);
   const wageBook = await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getId()`);
   await cellDoubleClick('qcDeptTablesWrap',0,qtyCol);
@@ -273,7 +279,7 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await waitFor(`!document.getElementById('modalOverlay').classList.contains('show') && !_qcViewModeBusy && _qcState.qcViewMode==='wage' && LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.book.getId()!==${JSON.stringify(wageBook)}`);
   assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${qtyCol}).getValue())`),242,'工资视角编辑人员后仍保留工资显示与原数据');
   await delay(400);
-  await longColumnDrag('qcDeptTablesWrap',0,qtyCol,qtyCol+1);
+  await longColumnDrag('qcDeptTablesWrap',0,qtyCol,qtyCol+1,false,3);
   await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready && LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(0,${qtyCol+1}).getValue()==='张三乙'`);
   assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${qtyCol+1}).getValue())`),242,'快捷工资列换位不丢工资与对数');
   assert.equal(await evaluate(`get('/api/app-settings/manualEmployeeOrder.quickcalc.1').then(data=>data.value)`),'[2,1]','快捷列顺序持久化');
@@ -354,5 +360,5 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await click('.nav-item[data-view="overview"]');
   await waitFor(`_currentView==='overview'`);
   assert.equal(await evaluate(`document.querySelector('.overview-card[data-view="departments"],.overview-card[data-view="prices"]')`),null,'主页不重复显示已合并功能');
-  console.log('PASS: 单价列长按动画/数据和列宽跟随/工资视角换位/取消及重启恢复，做货与快捷表长按换列/数据与列宽跟随/工资视角/禁止跨部门/Escape取消/重启保留，人员卡片/表头编辑/极简导航/工资页');
+  console.log('PASS: XX单价及人员表头长按/数据格不触发/不同高度和空白格松开实际换位/单价列长按动画/数据和列宽跟随/工资视角换位/取消及重启恢复，做货与快捷表长按换列/数据与列宽跟随/工资视角/禁止跨部门/Escape取消/重启保留，人员卡片/表头编辑/极简导航/工资页');
 };
