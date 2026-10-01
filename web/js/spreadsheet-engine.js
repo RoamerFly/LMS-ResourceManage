@@ -316,6 +316,7 @@
     };
     // 只响应原地左键双击姓名，不把拖拽选区、Shift 扩选或键盘移格当作编辑人员。
     let nameClickGesture = null;
+    let lastNameCellClick = null;
     const trackNamePointerDown = event => {
       nameClickGesture = { x: event.clientX, y: event.clientY, moved: false,
         allowed: event.button === 0 && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey };
@@ -323,23 +324,34 @@
     const trackNamePointerMove = event => {
       if (nameClickGesture && Math.hypot(event.clientX - nameClickGesture.x, event.clientY - nameClickGesture.y) > 4) nameClickGesture.moved = true;
     };
+    const trackNameDoubleClick = event => {
+      if (!nameClickGesture?.allowed || nameClickGesture.moved || event.button !== 0 ||
+        event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.target.tagName !== 'CANVAS') return;
+      const cell = lastNameCellClick;
+      if (!cell) return;
+      const meta = instance.sheets.get(cell.worksheet.getSheetId());
+      const header = meta?.cells.get(`${cell.row},${cell.column}`)?.td;
+      if (cell.row !== meta?.headerRows - 1 || !header?.dataset.empId) return;
+      const rect = cell.worksheet.getRange(cell.row, cell.column).getCellRect();
+      const canvas = event.target.getBoundingClientRect();
+      const x = event.clientX - canvas.x, y = event.clientY - canvas.y;
+      if (!rect || x < rect.x || x > rect.x + rect.width || y < rect.y || y > rect.y + rect.height) return;
+      // 直接使用浏览器的真实 dblclick；引擎内部启动编辑也会标记 Dblclick，不能据此弹窗。
+      nameClickGesture = null;
+      lastNameCellClick = null;
+      void showEditMemberModal(Number(header.dataset.empId));
+    };
     host.addEventListener('pointerdown', trackNamePointerDown, true);
     host.addEventListener('pointermove', trackNamePointerMove, true);
+    host.addEventListener('dblclick', trackNameDoubleClick, true);
     instance.disposables.push({ dispose() {
       host.removeEventListener('pointerdown', trackNamePointerDown, true);
       host.removeEventListener('pointermove', trackNamePointerMove, true);
+      host.removeEventListener('dblclick', trackNameDoubleClick, true);
     } });
+    listen(api.Event.CellClicked, event => { lastNameCellClick = event; });
     listen(api.Event.BeforeSheetEditStart, event => {
       const meta = instance.sheets.get(event.worksheet.getSheetId());
-      const header = meta?.cells.get(`${event.row},${event.column}`)?.td;
-      // Univer 1.0.3 的 DeviceInputEventType.Dblclick 为 3；键盘/F2 不触发人员编辑。
-      if (event.eventType === 3 && event.row === meta?.headerRows - 1 && header?.dataset.empId &&
-        nameClickGesture?.allowed && !nameClickGesture.moved) {
-        event.cancel = true;
-        nameClickGesture = null;
-        void showEditMemberModal(Number(header.dataset.empId));
-        return;
-      }
       if (type === 'quick-calc' && event.row > meta.headerRows + getQcUsedRowCount(meta.id.replace('dept-', ''))) {
         event.cancel = true;
         notify('请先填写上一行，不能跳过空白行');

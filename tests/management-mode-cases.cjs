@@ -98,10 +98,14 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await waitFor(`(() => {const instance=LmsSpreadsheet.getInstance('spreadsheetWrap');const sheet=instance.book.save().sheets.work;const rect=instance.book.getActiveSheet().getRange(2,2).getCellRect();return rect.x===sheet.rowHeader.width+sheet.columnData[0].w+sheet.columnData[1].w && rect.width===sheet.columnData[2].w;})()`);
   await cellClick('spreadsheetWrap',1,2);
   assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'做货表头单击只选格');
+  await type('9');
+  await key('F2',113);
+  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'做货表头单击后打字/F2不打开人员编辑');
   await cellClick('spreadsheetWrap',2,2);
   await waitFor(`document.activeElement?.getAttribute('data-u-comp')==='editor'`);
   await type('7');
   await waitFor(`LmsSpreadsheet.getInstance('spreadsheetWrap').book.isCellEditing()`);
+  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'单击数量格并输入时不打开人员编辑');
   await cellDoubleClick('spreadsheetWrap',1,2);
   await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.querySelector('#modalBox .modal-title')?.textContent==='编辑人员'`);
   assert.equal(await evaluate(`get('/api/work-records?year=2026&month=9').then(data=>data.records.find(row=>row.emp_id===1).quantity)`),7,'双击做货表头先提交并保存当前数字');
@@ -143,8 +147,11 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'快捷表头单击只选格');
   await key('F2',113);
   assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'F2不打开人员编辑');
+  await type('9');
+  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'快捷表头单击后打字不打开人员编辑');
   await cellClick('qcDeptTablesWrap',1,qtyCol);
   await type('88');
+  assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'快捷数量格输入不打开人员编辑');
   await cellDoubleClick('qcDeptTablesWrap',0,qtyCol);
   await waitFor(`document.getElementById('modalOverlay').classList.contains('show') && document.getElementById('m-name')?.value==='张三甲'`);
   await evaluate(`document.getElementById('m-name').value='张三乙'`);
