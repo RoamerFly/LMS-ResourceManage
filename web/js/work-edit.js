@@ -212,6 +212,7 @@ function renderSpreadsheet() {
       <th class="work-dept-hint-fixed-left" colspan="2">成员所属部门</th>
       ${buildDeptHintCells(groupEmps)}
       <th class="work-dept-hint-summary">汇总</th>
+      <th></th>
     </tr>
     <tr class="work-member-header-row">
       <th class="col-fixed work-sticky-order" style="${orderColStyle}background:var(--work-header-bg);color:var(--work-header-text);z-index:23;">订单号</th>
@@ -230,6 +231,7 @@ function renderSpreadsheet() {
         )
         .join("")}
       <th style="background:var(--work-total-bg);color:var(--work-total-text);min-width:80px;">行合计</th>
+      <th data-add-member="" title="双击添加人员" style="background:#eff6ff;color:#64748b"></th>
     </tr></thead>`;
 
     let tbodyHtml = "<tbody>";
@@ -301,6 +303,7 @@ function renderSpreadsheet() {
           style="font-weight:700;text-align:center;background:var(--work-total-bg);color:var(--work-total-text);">
           ${totalDisplay}
         </td>
+        <td></td>
       </tr>`;
     }
     tbodyHtml += "</tbody>";

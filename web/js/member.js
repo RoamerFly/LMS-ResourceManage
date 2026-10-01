@@ -5,6 +5,7 @@ let memberDraggingId = 0;
 let memberDraggingDeptId = 0;
 let memberSuppressClickUntil = 0;
 let memberEditorLoading = false;
+let memberSheetContext = null;
 let memberLoadVersion = 0;
 
 async function loadMembers(options = {}) {
@@ -408,23 +409,60 @@ function onDeptChange(prefix) {
     '<option value="">-- 选择 --</option>' + subs.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
 }
 
-async function showAddMemberModal() {
-  const depts = await get('/api/departments');
-  const subs = await get('/api/sub-departments');
-  _state.departments = depts;
-  _state.subDepartments = subs;
-  openModal(`
-    <div class="modal-title">添加人员</div>
-    <div class="form-row">
-      <div class="form-group"><label>姓名</label><input id="m-name" type="text" placeholder="输入姓名"></div>
-      <div class="form-group"><label>性别</label><select id="m-gender"><option value="男">男</option><option value="女">女</option></select></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>大部门</label><select id="m-dept" onchange="onDeptChange('m')"><option value="">-- 选择 --</option>${depts.map(d => `<option value="${d.id}">${escHtml(d.name)}</option>`).join('')}</select></div>
-      <div class="form-group"><label>小部门</label><select id="m-subdept"><option value="">-- 先选大部门 --</option></select></div>
-    </div>
-    <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="doAddMember()">保存</button></div>
-  `);
+async function prepareMemberSheetContext() {
+  const type = _currentView === 'quickcalc' ? 'quick-calc' : _currentView === 'work' ? 'work-edit' : null;
+  if (!type) return null;
+  await window.LmsSpreadsheet?.flush(type);
+  if (type === 'quick-calc') {
+    clearTimeout(window._qcAutoSaveTimer);
+    await autoSaveQc();
+  } else {
+    clearTimeout(window._weAutoSaveTimer);
+    await autoSaveWorkRecords();
+  }
+  return { navigation: window.LmsSpreadsheet?.captureNavigation(type), view: _currentView,
+    wage: type === 'quick-calc' ? _qcState.qcViewMode === 'wage' : _state.viewMode === 'wage' };
+}
+
+async function refreshMemberSheet(context) {
+  if (context?.view !== getCurrentView()) return false;
+  if (context.view === 'quickcalc') {
+    await initQuickCalc();
+    if (context.wage) await qcToggleViewMode();
+  } else if (context.view === 'work') await loadWorkRecords();
+  else return false;
+  await window.LmsSpreadsheet?.restoreNavigation(context.navigation);
+  return true;
+}
+
+async function showAddMemberModal(options = {}) {
+  if (memberEditorLoading) return;
+  memberEditorLoading = true;
+  try {
+    memberSheetContext = await prepareMemberSheetContext();
+    const [depts, subs] = await Promise.all([get('/api/departments'), get('/api/sub-departments')]);
+    _state.departments = depts;
+    _state.subDepartments = subs;
+    openModal(`
+      <div class="modal-title">添加人员</div>
+      <div class="form-row">
+        <div class="form-group"><label>姓名</label><input id="m-name" type="text" placeholder="输入姓名"></div>
+        <div class="form-group"><label>性别</label><select id="m-gender"><option value="男">男</option><option value="女">女</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>大部门</label><select id="m-dept" onchange="onDeptChange('m')"><option value="">-- 选择 --</option>${depts.map(d => `<option value="${d.id}">${escHtml(d.name)}</option>`).join('')}</select></div>
+        <div class="form-group"><label>小部门</label><select id="m-subdept"><option value="">-- 先选大部门 --</option></select></div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="doAddMember()">保存</button></div>
+    `);
+    if (options.deptId && depts.some(dept => dept.id === options.deptId)) {
+      document.getElementById('m-dept').value = String(options.deptId);
+      onDeptChange('m');
+      const departmentSubs = subs.filter(sub => sub.dept_id === options.deptId);
+      if (departmentSubs.length === 1) document.getElementById('m-subdept').value = String(departmentSubs[0].id);
+    }
+    document.getElementById('m-name').focus();
+  } finally { memberEditorLoading = false; }
 }
 
 async function doAddMember() {
@@ -438,7 +476,7 @@ async function doAddMember() {
   if (r.ok) {
     closeModal();
     toast('添加成功', 'success');
-    loadMembers();
+    if (!await refreshMemberSheet(memberSheetContext)) await loadMembers();
   } else {
     toast(r.error || '添加失败', 'error');
   }
@@ -448,16 +486,8 @@ async function showEditMemberModal(empId) {
   if (memberEditorLoading) return;
   memberEditorLoading = true;
   try {
-    // 表头打开人员弹窗前提交当前数字；编辑人员时也能安全刷新表格。
-    if (_currentView === 'quickcalc') {
-      await window.LmsSpreadsheet?.flush('quick-calc');
-      clearTimeout(window._qcAutoSaveTimer);
-      await autoSaveQc();
-    } else if (_currentView === 'work') {
-      await window.LmsSpreadsheet?.flush('work-edit');
-      clearTimeout(window._weAutoSaveTimer);
-      await autoSaveWorkRecords();
-    }
+    // 提交数字并记住当前部门、选区和视口，保存人员后回到同一位置。
+    memberSheetContext = await prepareMemberSheetContext();
     const [employees, depts, subs] = await Promise.all([get('/api/employees'), get('/api/departments'), get('/api/sub-departments')]);
     const emp = employees.find(e => e.id === empId);
     if (!emp) return toast('该人员已不存在，请刷新页面', 'error');
@@ -494,11 +524,8 @@ async function doEditMember(empId) {
     closeModal();
     toast('保存成功', 'success');
     const view = getCurrentView();
-    if (view === 'quickcalc') {
-      const wasWage = _qcState.qcViewMode === 'wage';
-      await initQuickCalc();
-      if (wasWage) await qcToggleViewMode();
-    } else if (view === 'work') await loadWorkRecords();
+    if (await refreshMemberSheet(memberSheetContext)) return;
+    if (view === 'work') await loadWorkRecords();
     else if (view === 'member-detail') await loadMemberDetail(empId);
     else if (view === 'salary') await loadSalary({ animate: false });
     else await loadMembers({ animate: false });

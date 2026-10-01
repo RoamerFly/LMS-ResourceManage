@@ -199,6 +199,7 @@ function renderQcDeptTables() {
         </th>`;
       }
       html += `<th style="min-width:70px;width:70px;background:#fef9c3;color:#92400e;position:sticky;top:0;z-index:10;text-align:center;">行合计</th>`;
+      html += `<th data-add-member="" data-dept-id="${dept.id}" title="双击添加人员" style="background:#eff6ff;color:#64748b"></th>`;
       html += '</tr></thead>';
 
       // 表体
@@ -293,6 +294,7 @@ function renderQcDeptTables() {
 
         // 行合计
         html += `<td data-sheet-value="${rowTotal}" class="row-total-display${isWage ? ' wage' : ''}${rowCompact}" style="background:#fef9c3;font-weight:700;color:#92400e;text-align:center;">${rowDisplay}</td>`;
+        html += '<td class="qc-add-member-cell" style="background:#ffffff"></td>';
 
         html += '</tr>';
       }

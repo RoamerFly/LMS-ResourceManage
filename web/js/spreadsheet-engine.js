@@ -100,6 +100,9 @@
     const legacyColumnKeys = Object.fromEntries([...cells.values()].filter(cell => cell.row === headerRows - 1)
       .map(cell => [cell.col, cell.td.dataset.empId ? `emp-${cell.td.dataset.empId}` : textValue(cell.td)]));
     const columnKeys = { ...legacyColumnKeys };
+    for (const cell of cells.values()) if (cell.row === headerRows - 1 && cell.td.dataset.addMember !== undefined) {
+      columnKeys[cell.col] = 'add-member';
+    }
     for (const cell of cells.values()) if (cell.row === headerRows - 1 && cell.td.dataset.priceId) {
       columnKeys[cell.col] = `price-${cell.td.dataset.priceId}`;
     }
@@ -161,6 +164,53 @@
   function capture(type) {
     const instance = [...instances.values()].find(item => item.type === type);
     return instance ? { data: JSON.parse(JSON.stringify(instance.book.save())), fingerprints: instance.fingerprints } : null;
+  }
+
+  function captureNavigation(type) {
+    const instance = [...instances.values()].find(item => item.type === type);
+    if (!instance) return null;
+    const sheet = instance.book.getActiveSheet();
+    const meta = instance.sheets.get(sheet.getSheetId());
+    const range = sheet.getSelection()?.getActiveRange()?.getRange();
+    return { type, sheetId: meta.id, range: range && { ...range },
+      columns: { ...meta.columnKeys },
+      rows: Object.fromEntries([...meta.rows].map(([row, tr]) => [row, tr.dataset.rowKey])),
+      scroll: { ...sheet.getScrollState() } };
+  }
+
+  async function restoreNavigation(context) {
+    if (!context) return;
+    const instance = [...instances.values()].find(item => item.type === context.type);
+    const meta = instance?.sheets.get(context.sheetId);
+    if (!meta) return;
+    const sheet = instance.book.setActiveSheet(meta.id);
+    if (context.range) {
+      const column = old => {
+        const key = context.columns[old];
+        const found = Object.entries(meta.columnKeys).find(([, value]) => value === key);
+        return found ? Number(found[0]) : Math.min(old, meta.columnCount - 1);
+      };
+      const row = old => {
+        const key = context.rows[old];
+        const found = key && [...meta.rows].find(([, tr]) => tr.dataset.rowKey === key);
+        return found ? found[0] : Math.min(old, meta.data.rowCount - 1);
+      };
+      const startRow = row(context.range.startRow), endRow = row(context.range.endRow);
+      const startColumn = column(context.range.startColumn), endColumn = column(context.range.endColumn);
+      sheet.setActiveRange(sheet.getRange(Math.min(startRow, endRow), Math.min(startColumn, endColumn),
+        Math.abs(endRow - startRow) + 1, Math.abs(endColumn - startColumn) + 1));
+    }
+    // 等工作表视口建立后恢复滚动位置，避免重建时被默认首格覆盖。
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if ([...instances.values()].includes(instance) && context.scroll) {
+      instance.api.syncExecuteCommand('sheet.command.scroll-view', {
+        unitId: instance.book.getId(), sheetId: meta.id,
+        sheetViewStartRow: context.scroll.sheetViewStartRow || 0,
+        sheetViewStartColumn: context.scroll.sheetViewStartColumn || 0,
+        offsetX: context.scroll.offsetX || 0, offsetY: context.scroll.offsetY || 0, duration: 0
+      });
+    }
+    instance.updateActions();
   }
 
   function dispose(wrap) {
@@ -591,6 +641,13 @@
     listen(api.Event.BeforeSheetEditStart, event => {
       if (columnDrag.suppressEdit()) { event.cancel = true; return; }
       const meta = instance.sheets.get(event.worksheet.getSheetId());
+      const addHeader = meta?.cells.get(`${event.row},${event.column}`)?.td;
+      if (event.row === meta?.headerRows - 1 && addHeader?.dataset.addMember !== undefined) {
+        event.cancel = true;
+        // 空表头只通过双击新增；键入和F2仍维持只读。
+        if (event.eventType === 3) void showAddMemberModal({ deptId: Number(addHeader.dataset.deptId) || null }); // Dblclick
+        return;
+      }
       const header = personHeader(meta, event.row, event.column);
       // 姓名由人员资料统一维护：只选中不弹窗，开始编辑（打字、F2、双击）时打开人员编辑。
       if (header) {
@@ -839,7 +896,7 @@
     if (instance?.book.isCellEditing()) await instance.book.endEditingAsync(true);
   }
 
-  window.LmsSpreadsheet = { mount, dispose, capture, loadLayout, flush,
+  window.LmsSpreadsheet = { mount, dispose, capture, captureNavigation, restoreNavigation, loadLayout, flush,
     prepareRestore(type, snapshot) { if (snapshot) pendingRestore.set(type, snapshot); },
     getInstance(wrapId) { return instances.get(document.getElementById(wrapId)); },
     focusInput(input) {
