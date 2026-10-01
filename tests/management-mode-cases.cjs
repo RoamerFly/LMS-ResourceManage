@@ -28,6 +28,18 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
     }
     await delay(80);
   };
+  const longColumnDrag = async (wrap,row,fromCol,toCol,cancel=false) => {
+    const from=await cellPoint(wrap,row,fromCol), to=await cellPoint(wrap,row,toCol);
+    await mouse('mousePressed',from,{button:'left',buttons:1,clickCount:1});
+    await delay(550);
+    assert.ok(await evaluate(`document.querySelector('.lms-column-drag-preview')!==null`),'长按进入人员列换位');
+    await mouse('mouseMoved',to,{button:'left',buttons:1});
+    if(cancel) await key('Escape',27);
+    await mouse('mouseReleased',to,{button:'left',buttons:0,clickCount:1});
+    await delay(500);
+    assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'长按换列不弹人员编辑');
+    assert.equal(await evaluate(`document.querySelector('.lms-column-drag-preview')`),null,'松开或取消后移除拖拽提示');
+  };
   const type = async text => {
     for (const char of text) {
       await call('Input.dispatchKeyEvent',{type:'keyDown',key:char,windowsVirtualKeyCode:char.charCodeAt(0),text:char});
@@ -139,6 +151,24 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await click('#modalBox button[onclick="doEditMember(1)"]');
   await waitFor(`LmsSpreadsheet.getInstance('spreadsheetWrap')?.book.getActiveSheet().getRange(1,2).getValue()==='张三甲'`);
   assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet().getRange(2,2).getValue())`),7,'编辑人员后做货数据仍保留');
+  await delay(400);
+  await evaluate(`(async () => {LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet().setColumnWidth(2,108);LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet().setColumnWidth(3,140);await setMemberOrderSync('work',true);})()`);
+  await delay(200);
+  await cellClick('spreadsheetWrap',2,2);
+  await type('9');
+  await longColumnDrag('spreadsheetWrap',1,2,3);
+  await waitFor(`LmsSpreadsheet.getInstance('spreadsheetWrap')?.ready && LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet().getRange(1,3).getValue()==='张三甲'`);
+  assert.deepEqual(await evaluate(`(() => {const s=LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet();return [Number(s.getRange(2,2).getValue()),Number(s.getRange(2,3).getValue()),s.getColumnWidth(2),s.getColumnWidth(3)];})()`),[2,9,140,108],'换位保留每人数据和列宽，并提交尚未结束的录入');
+  assert.equal(await evaluate(`get('/api/work-records?year=2026&month=9').then(data=>data.records.find(row=>row.emp_id===1).quantity)`),9,'换位前保存数字到SQLite');
+  assert.equal(await evaluate(`get('/api/app-settings/manualEmployeeOrder.work.1').then(data=>data.value)`),'[2,1]','做货列顺序持久化');
+  assert.equal(await evaluate(`getMemberOrderSync('work')`),false,'手动换列退出同步人员顺序');
+  await delay(400);
+  await longColumnDrag('spreadsheetWrap',1,2,3,true);
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet().getRange(1,3).getValue()`),'张三甲','Escape取消换列');
+  await longColumnDrag('spreadsheetWrap',1,3,4);
+  assert.equal(await evaluate(`get('/api/app-settings/manualEmployeeOrder.work.1').then(data=>data.value)`),'[2,1]','禁止跨部门换列');
+  await longColumnDrag('spreadsheetWrap',1,2,3);
+  await waitFor(`LmsSpreadsheet.getInstance('spreadsheetWrap')?.ready && LmsSpreadsheet.getInstance('spreadsheetWrap').book.getActiveSheet().getRange(1,2).getValue()==='张三甲'`);
 
   // 保留常规模式原有来源，极简模式始终使用快捷计算。
   await evaluate(`toggleQcSalary(false)`);
@@ -200,6 +230,14 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await click('#modalBox button[onclick="doEditMember(1)"]');
   await waitFor(`!document.getElementById('modalOverlay').classList.contains('show') && !_qcViewModeBusy && _qcState.qcViewMode==='wage' && LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.book.getId()!==${JSON.stringify(wageBook)}`);
   assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${qtyCol}).getValue())`),242,'工资视角编辑人员后仍保留工资显示与原数据');
+  await delay(400);
+  await longColumnDrag('qcDeptTablesWrap',0,qtyCol,qtyCol+1);
+  await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready && LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(0,${qtyCol+1}).getValue()==='张三乙'`);
+  assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${qtyCol+1}).getValue())`),242,'快捷工资列换位不丢工资与对数');
+  assert.equal(await evaluate(`get('/api/app-settings/manualEmployeeOrder.quickcalc.1').then(data=>data.value)`),'[2,1]','快捷列顺序持久化');
+  await delay(400);
+  await longColumnDrag('qcDeptTablesWrap',0,qtyCol,qtyCol+1);
+  await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready && LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(0,${qtyCol}).getValue()==='张三乙'`);
   await evaluate('qcToggleViewMode()');
   await click('#minimalNav [data-view="salary"]');
   await waitFor(`_currentView==='salary' && document.getElementById('salaryContent').textContent.includes('242.00')`);
@@ -237,12 +275,18 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await waitFor(`_currentView==='quickcalc'`);
   await evaluate(`navigateTo('work')`);
   assert.equal(await evaluate('_currentView'),'quickcalc','极简模式旧入口不能进入做货编辑');
+  await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready`);
+  await delay(400);
+  await longColumnDrag('qcDeptTablesWrap',0,qtyCol,qtyCol+1);
+  await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready && LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(0,${qtyCol+1}).getValue()==='张三乙'`);
   await restartBackend();
   await call('Page.reload');
   await loaded();
   assert.equal(await evaluate('_currentView'),'quickcalc','重启后直接以快捷计算为主页');
   assert.equal(await evaluate('isMinimalMode() && getSalarySource()==="qc"'),true,'极简模式与工资来源持久化');
   assert.equal(await evaluate(`get('/api/app-settings-all').then(data=>data.ui_minimalMode)`),true,'极简设置保存到数据库');
+  await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready && LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(0,${qtyCol+1}).getValue()==='张三乙'`);
+  assert.equal(await evaluate(`Number(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,${qtyCol+1}).getValue())`),88,'重启后仍保持人员列顺序与原对数');
   await call('Emulation.setDeviceMetricsOverride',{width:1000,height:680,deviceScaleFactor:1,mobile:false});
   await delay(300);
   const narrow = await evaluate(`(() => {const nav=document.getElementById('minimalNav').getBoundingClientRect();const host=document.querySelector('#qcDeptTablesWrap .lms-sheet-host').getBoundingClientRect();return {left:nav.left,right:nav.right,center:nav.x+nav.width/2,hostHeight:host.height,hostBottom:host.bottom};})()`);
@@ -263,5 +307,5 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await click('.nav-item[data-view="overview"]');
   await waitFor(`_currentView==='overview'`);
   assert.equal(await evaluate(`document.querySelector('.overview-card[data-view="departments"],.overview-card[data-view="prices"]')`),null,'主页不重复显示已合并功能');
-  console.log('PASS: 极简工资页压缩/隐藏返回，人员部门配色/男女纹样/大标题/鲜艳按钮，月度数据/卡片点击/框内滚动/表头编辑/导航/SQLite重启');
+  console.log('PASS: 做货与快捷表长按换列/数据与列宽跟随/工资视角/禁止跨部门/Escape取消/重启保留，人员卡片/表头编辑/极简导航/工资页');
 };

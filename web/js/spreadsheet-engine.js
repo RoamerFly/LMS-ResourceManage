@@ -171,6 +171,119 @@
       (cell.isPrice || Number.isSafeInteger(Number(raw)));
   }
 
+  function attachColumnDrag(instance, swapColumns) {
+    const { host, book, api } = instance;
+    let press = null;
+    let timer = null;
+    let preview = null;
+    let marker = null;
+    let suppressEditUntil = 0;
+    const headers = meta => [...meta.cells.values()].filter(cell => cell.row === meta.headerRows - 1 && cell.td.dataset.empId);
+    const canvasRect = () => [...host.querySelectorAll('canvas')].map(canvas => canvas.getBoundingClientRect())
+      .sort((a, b) => b.width * b.height - a.width * a.height)[0];
+    const headerAt = (meta, x, y) => {
+      const canvas = canvasRect();
+      if (!canvas || x < canvas.left || x > canvas.right || y < canvas.top || y > canvas.bottom) return null;
+      const sheet = book.getActiveSheet();
+      if (sheet.getSheetId() !== meta.id) return null;
+      for (const cell of headers(meta)) {
+        const rect = sheet.getRange(cell.row, cell.col).getCellRect();
+        if (rect && x >= canvas.x + rect.x && x <= canvas.x + rect.x + rect.width &&
+          y >= canvas.y + rect.y && y <= canvas.y + rect.y + rect.height) return { cell, rect, canvas };
+      }
+      return null;
+    };
+    const clear = () => {
+      clearTimeout(timer);
+      if (press?.active) suppressEditUntil = Date.now() + 350;
+      press = null;
+      preview?.remove(); marker?.remove();
+      preview = marker = null;
+      host.classList.remove('lms-column-dragging');
+    };
+    const paint = (x, y) => {
+      const hit = headerAt(press.meta, x, y);
+      const allowed = hit?.cell.td.dataset.deptId === press.source.td.dataset.deptId;
+      press.target = allowed ? hit.cell : null;
+      preview.textContent = !hit ? '拖到同部门姓名上换位' : !allowed ? '只能在同一部门内换位' :
+        `${textValue(press.source.td)} → ${textValue(hit.cell.td)}`;
+      preview.style.left = `${Math.min(x + 14, innerWidth - 240)}px`;
+      preview.style.top = `${Math.min(y + 18, innerHeight - 48)}px`;
+      marker.hidden = !hit;
+      if (hit) {
+        Object.assign(marker.style, { left: `${hit.canvas.x + hit.rect.x}px`, top: `${hit.canvas.y + hit.rect.y}px`,
+          width: `${hit.rect.width}px`, height: `${hit.rect.height}px` });
+        marker.classList.toggle('invalid', !allowed);
+      }
+    };
+    const down = event => {
+      clear();
+      if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.target.tagName !== 'CANVAS') return;
+      press = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, active: false };
+    };
+    const move = event => {
+      if (!press || event.pointerId !== press.pointerId) return;
+      if (!press.active) {
+        if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > 6) clear();
+        return;
+      }
+      event.preventDefault(); event.stopImmediatePropagation();
+      paint(event.clientX, event.clientY);
+    };
+    const up = event => {
+      if (!press || event.pointerId !== press.pointerId) return;
+      const gesture = press;
+      if (gesture.active) { paint(event.clientX, event.clientY); event.preventDefault(); }
+      clear();
+      // 让引擎先结束自身的选格手势，再保存与重建人员列。
+      if (gesture.active && gesture.target && gesture.target !== gesture.source) {
+        setTimeout(() => { void swapColumns(gesture.meta, gesture.source, gesture.target); }, 0);
+      }
+    };
+    const escape = event => {
+      if (event.key === 'Escape' && press?.active) { event.preventDefault(); event.stopImmediatePropagation(); clear(); }
+    };
+    const suppressClick = event => {
+      if (press?.active || Date.now() < suppressEditUntil) { event.preventDefault(); event.stopImmediatePropagation(); }
+    };
+    host.addEventListener('pointerdown', down, true);
+    host.addEventListener('click', suppressClick, true);
+    host.addEventListener('dblclick', suppressClick, true);
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', clear, true);
+    window.addEventListener('blur', clear);
+    window.addEventListener('keydown', escape, true);
+    instance.disposables.push(api.addEvent(api.Event.CellPointerDown, event => {
+      if (!press || press.active) return;
+      const meta = instance.sheets.get(event.worksheet.getSheetId());
+      const source = meta?.cells.get(`${event.row},${event.column}`);
+      if (!source?.td.dataset.empId || event.row !== meta.headerRows - 1) return;
+      Object.assign(press, { meta, source });
+      timer = setTimeout(() => {
+        if (!press) return;
+        press.active = true;
+        host.classList.add('lms-column-dragging');
+        preview = document.createElement('div'); preview.className = 'lms-column-drag-preview';
+        marker = document.createElement('div'); marker.className = 'lms-column-drag-marker';
+        document.body.append(preview, marker);
+        paint(press.x, press.y);
+      }, 450);
+    }));
+    instance.disposables.push({ dispose() {
+      clear();
+      host.removeEventListener('pointerdown', down, true);
+      host.removeEventListener('click', suppressClick, true);
+      host.removeEventListener('dblclick', suppressClick, true);
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', clear, true);
+      window.removeEventListener('blur', clear);
+      window.removeEventListener('keydown', escape, true);
+    } });
+    return { isDragging: () => !!press?.active, suppressEdit: () => press?.active || Date.now() < suppressEditUntil };
+  }
+
   function mount(wrap, type) {
     if (!wrap || !window.LmsSheetEngine) return;
     // 两个业务页面只允许一个活动工作簿，避免隐藏表格抢占键盘和编辑器焦点。
@@ -314,6 +427,33 @@
         }
       } finally { instance.syncing = false; }
     };
+    let columnOrderBusy = false;
+    const swapEmployeeColumns = async (meta, source, target) => {
+      if (columnOrderBusy || instances.get(wrap) !== instance || source.td.dataset.deptId !== target.td.dataset.deptId) return;
+      columnOrderBusy = true;
+      try {
+        await flush(type);
+        if (type === 'work-edit') { clearTimeout(window._weAutoSaveTimer); await autoSaveWorkRecords(); }
+        else { clearTimeout(window._qcAutoSaveTimer); await autoSaveQc(); }
+        const page = type === 'work-edit' ? 'work' : 'quickcalc';
+        const ids = [...meta.cells.values()].filter(cell => cell.row === meta.headerRows - 1 &&
+          cell.td.dataset.empId && cell.td.dataset.deptId === source.td.dataset.deptId).map(cell => Number(cell.td.dataset.empId));
+        const sync = await setMemberOrderSync(page, false);
+        const order = await setManualEmployeeOrder(page, Number(source.td.dataset.deptId),
+          swapIds(ids, Number(source.td.dataset.empId), Number(target.td.dataset.empId)));
+        if (sync?.ok === false || order?.ok === false) throw new Error('列顺序保存失败');
+        const syncInput = document.querySelector(`#memberOrderSync_${page} input`);
+        if (syncInput) syncInput.checked = false;
+        if (type === 'work-edit') renderSpreadsheet(); else renderQcDeptTables();
+        const next = instances.get(wrap);
+        const sheet = next.book.setActiveSheet(meta.id);
+        const moved = [...next.sheets.get(meta.id).cells.values()].find(cell =>
+          cell.row === meta.headerRows - 1 && cell.td.dataset.empId === source.td.dataset.empId);
+        if (moved) sheet.setActiveRange(sheet.getRange(moved.row, moved.col));
+      } catch (error) { notify(error.message || '列顺序保存失败'); }
+      finally { columnOrderBusy = false; }
+    };
+    const columnDrag = attachColumnDrag(instance, swapEmployeeColumns);
     const personHeader = (meta, row, column) => {
       const header = meta?.cells.get(`${row},${column}`)?.td;
       return row === meta?.headerRows - 1 && header?.dataset.empId ? header : null;
@@ -323,6 +463,7 @@
       // 只读表头的键盘编辑可能被引擎提前拦截，在窗口捕获阶段识别录入意图。
       if (event.type === 'keydown' && ((event.ctrlKey || event.metaKey || event.altKey) ||
         !(event.key.length === 1 || ['F2', 'Backspace', 'Process', 'Dead'].includes(event.key)))) return;
+      if (columnDrag.isDragging()) { event.preventDefault(); event.stopImmediatePropagation(); return; }
       const sheet = book.getActiveSheet();
       const active = sheet.getSelection()?.getCurrentCell();
       const header = personHeader(instance.sheets.get(sheet.getSheetId()),
@@ -339,6 +480,7 @@
       window.removeEventListener('compositionstart', editSelectedPerson, true);
     } });
     listen(api.Event.BeforeSheetEditStart, event => {
+      if (columnDrag.suppressEdit()) { event.cancel = true; return; }
       const meta = instance.sheets.get(event.worksheet.getSheetId());
       const header = personHeader(meta, event.row, event.column);
       // 姓名由人员资料统一维护：只选中不弹窗，开始编辑（打字、F2、双击）时打开人员编辑。
@@ -528,13 +670,7 @@
           const at = headers.findIndex(cell => cell.td === header);
           const neighbor = headers[at + direction];
           move.disabled = !neighbor;
-          move.onclick = async () => {
-            const page = type === 'work-edit' ? 'work' : 'quickcalc';
-            await setMemberOrderSync(page, false);
-            await setManualEmployeeOrder(page, Number(header.dataset.deptId),
-              swapIds(headers.map(cell => Number(cell.td.dataset.empId)), Number(header.dataset.empId), Number(neighbor.td.dataset.empId)));
-            if (type === 'work-edit') renderSpreadsheet(); else renderQcDeptTables();
-          };
+          move.onclick = () => swapEmployeeColumns(meta, headers[at], neighbor);
           actionTarget.appendChild(move);
         }
       }

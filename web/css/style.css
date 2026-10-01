@@ -2235,6 +2235,11 @@ body.minimal-mode #view-members .personnel-back { display: none; }
 .member-editor-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 18px; }
 .member-editor-actions > div { display: flex; gap: 8px; }
 
+.lms-column-dragging, .lms-column-dragging canvas { cursor: grabbing !important; }
+.lms-column-drag-preview { position: fixed; z-index: 2100; pointer-events: none; max-width: 230px; padding: 9px 12px; border-radius: 10px; background: #1e293b; color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.18); font-size: var(--font-size-12); }
+.lms-column-drag-marker { position: fixed; z-index: 2099; pointer-events: none; border: 2px solid #7c3aed; border-radius: 4px; background: rgba(124,58,237,.10); }
+.lms-column-drag-marker.invalid { border-color: var(--danger); background: rgba(239,68,68,.10); }
+
 /* 极简模式人员卡片：部门固定色调，男斜纹、女圆点。图案不阻挡单击和拖拽。 */
 body.minimal-mode #view-members .member-card {
   overflow: hidden;
