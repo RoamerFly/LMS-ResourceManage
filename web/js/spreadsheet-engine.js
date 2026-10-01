@@ -265,6 +265,61 @@
     instances.delete(wrap);
   }
 
+  function updateSpotlight() {
+    for (const instance of instances.values()) instance.refreshSpotlight?.();
+  }
+
+  function attachSpotlight(instance) {
+    const { api, book } = instance;
+    let highlight = null;
+    let frame = null;
+    let disposed = false;
+    const clear = () => { highlight?.dispose(); highlight = null; };
+    const refresh = () => {
+      if (disposed) return;
+      clear();
+      instance.spotlight = null;
+      if (typeof _currentSettings !== 'undefined' && !_currentSettings['table-spotlight']) return;
+      const sheet = book.getActiveSheet();
+      const cell = sheet?.getSelection()?.getCurrentCell();
+      if (!cell) return;
+      const row = cell.actualRow ?? cell.startRow, col = cell.actualColumn ?? cell.startColumn;
+      const rows = sheet.getMaxRows(), columns = sheet.getMaxColumns();
+      if (row < 0 || col < 0 || row >= rows || col >= columns) return;
+      // 临时绘制层，不修改单元格底色，也不进入保存、剪贴板或撤销历史。
+      // 焦点格由原生选框突出；行列在交点之外着色，避免重叠加深。
+      const ranges = [];
+      if (col > 0) ranges.push(sheet.getRange(row, 0, 1, col));
+      if (col + 1 < columns) ranges.push(sheet.getRange(row, col + 1, 1, columns - col - 1));
+      if (row > 0) ranges.push(sheet.getRange(0, col, row, 1));
+      if (row + 1 < rows) ranges.push(sheet.getRange(row + 1, col, rows - row - 1, 1));
+      if (ranges.length) highlight = sheet.highlightRanges(ranges, {
+        fill: 'rgba(139, 92, 246, 0.12)', stroke: 'transparent', strokeWidth: 0,
+        widgets: {}, widgetSize: 0, autofillSize: 0,
+      });
+      instance.spotlight = { sheetId: sheet.getSheetId(), row, column: col };
+    };
+    const schedule = () => {
+      if (disposed || frame !== null) return;
+      frame = requestAnimationFrame(() => { frame = null; refresh(); });
+    };
+    for (const event of [api.Event.SelectionMoveEnd, api.Event.ActiveSheetChanged, api.Event.ClipboardChanged]) {
+      instance.disposables.push(api.addEvent(event, schedule));
+    }
+    instance.disposables.push(api.addEvent(api.Event.CommandExecuted, event => {
+      // 编辑器开关会清除引擎临时高亮；在完成命令后重新绘制。
+      if (['sheet.operation.set-cell-edit-visible', 'sheet.operation.set-selections', 'sheet.operation.set-format-painter'].includes(event.id) || /^sheet\.mutation\./.test(event.id)) schedule();
+    }));
+    instance.refreshSpotlight = refresh;
+    instance.disposables.push({ dispose() {
+      disposed = true;
+      cancelAnimationFrame(frame);
+      clear();
+      instance.spotlight = null;
+    } });
+    schedule();
+  }
+
   function validValue(cell, value) {
     if (value == null || value === '') return true;
     if (typeof value !== 'string' && typeof value !== 'number') return false;
@@ -582,6 +637,7 @@
       }
     };
     const listen = (event, fn) => instance.disposables.push(api.addEvent(event, fn));
+    attachSpotlight(instance);
     const extendColumns = event => {
       if (event.workbook.getId() !== book.getId() || instances.get(wrap) !== instance) return;
       const meta = instance.sheets.get(event.worksheet.getSheetId());
@@ -971,7 +1027,7 @@
     if (instance?.book.isCellEditing()) await instance.book.endEditingAsync(true);
   }
 
-  window.LmsSpreadsheet = { mount, dispose, capture, captureNavigation, restoreNavigation, loadLayout, flush, updateTypography,
+  window.LmsSpreadsheet = { mount, dispose, capture, captureNavigation, restoreNavigation, loadLayout, flush, updateTypography, updateSpotlight,
     prepareRestore(type, snapshot) { if (snapshot) pendingRestore.set(type, snapshot); },
     getInstance(wrapId) { return instances.get(document.getElementById(wrapId)); },
     focusInput(input) {

@@ -1,0 +1,67 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+
+module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) => {
+  await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+  const waitFor = async expression => {
+    for (let i=0;i<100;i++) { if (await evaluate(expression)) return; await delay(100); }
+    throw new Error(`页面未就绪：${expression}`);
+  };
+  const loaded = () => waitFor(`document.getElementById('loadingOverlay')?.style.display==='none'`);
+  const ready = () => waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready && !document.querySelector('#qcDeptTablesWrap [data-u-comp="workbench-skeleton-shimmer"]')`);
+  const state = () => evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').spotlight`);
+  const shapes = () => evaluate(`window.spotlightRangeCount`);
+  const select = async (row,col) => {
+    const at = await evaluate(`(() => {const i=LmsSpreadsheet.getInstance('qcDeptTablesWrap'),s=i.book.getActiveSheet(),r=s.getRange(${row},${col}).getCellRect(),c=[...i.host.querySelectorAll('canvas')].sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight)[0].getBoundingClientRect(),zoom=s.getZoom();return {x:c.x+(r.x+r.width/2)*zoom,y:c.y+(r.y+r.height/2)*zoom};})()`);
+    await mouse('mousePressed',at,{button:'left',buttons:1,clickCount:1});
+    await mouse('mouseReleased',at,{button:'left',buttons:0,clickCount:1});
+    await delay(100);
+  };
+  await loaded(); await click('.nav-item[data-view="quickcalc"]'); await ready(); await delay(150);
+  await evaluate(`(() => {const i=LmsSpreadsheet.getInstance('qcDeptTablesWrap'),proto=Object.getPrototypeOf(i.book.getActiveSheet()),original=proto.highlightRanges;window.spotlightRangeCount=0;window.spotlightDrawCount=0;proto.highlightRanges=function(ranges,...args){const disposable=original.call(this,ranges,...args);window.spotlightDrawCount++;window.spotlightRangeCount+=ranges.length;return {dispose(){window.spotlightRangeCount-=ranges.length;disposable.dispose();}};};applySetting('table-spotlight',false,true);applySetting('table-spotlight',true,true);})()`);
+  assert.equal(await evaluate(`_currentSettings['table-spotlight']`),true,'聚光灯默认启用');
+  await select(1,3);
+  assert.deepEqual(await state(),{sheetId:'dept-1',row:1,column:3},'鼠标选格跟随焦点');
+  assert.equal(await shapes(),4,'原生渲染器绘制四段行列高亮');
+  await key('ArrowRight',39); await delay(100);
+  assert.equal((await state()).column,4,'方向键移动同步聚光灯');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3,2,3))`); await delay(100);
+  assert.equal(await shapes(),4,'多格选择保留焦点行列，不累积高亮');
+  await evaluate(`window.spotlightBefore=JSON.stringify(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.save());applySetting('table-spotlight',false,true)`);
+  assert.equal(await state(),null,'关闭立即清除焦点效果');
+  assert.equal(await shapes(),0,'关闭清理绘制对象');
+  await evaluate(`applySetting('table-spotlight',true,true)`);
+  assert.equal(await evaluate(`window.spotlightBefore===JSON.stringify(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.save())`),true,'高亮开关不修改数据或格式');
+  await select(1,3); await key('F2',113); await delay(100);
+  assert.equal(await shapes(),4,'开始编辑后仍显示行列高亮');
+  await call('Input.insertText',{text:'0'}); await key('Enter',13); await delay(200);
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3).getRawValue()`),0,'高亮不阻碍写入零值');
+  assert.equal(await shapes(),4,'提交编辑后重新跟随焦点');
+  const beforeCopy=await evaluate(`window.spotlightDrawCount`);
+  await key('c',67,2); await delay(200);
+  assert.ok(await evaluate(`window.spotlightDrawCount`) > beforeCopy,'复制后恢复被引擎清除的聚光灯');
+  await click('#qcDeptTablesWrap [data-u-comp="slide-tab-item"][data-id="dept-2"]'); await delay(150);
+  assert.equal((await state()).sheetId,'dept-2','工作表切换更新高亮');
+  await select(1,3);
+  assert.equal(await shapes(),4,'切换清理旧表高亮');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().zoom(1.5)`); await select(1,3);
+  assert.equal((await state()).column,3,'缩放后鼠标选格正确');
+  await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').api.syncExecuteCommand('sheet.command.scroll-view',{unitId:LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getId(),sheetId:'dept-2',sheetViewStartRow:30,sheetViewStartColumn:30,offsetX:0,offsetY:0,duration:0})`); await delay(150);
+  assert.equal(await shapes(),4,'冻结表头和滚动保留高亮');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setActiveRange(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(31,31))`); await delay(150);
+  assert.equal((await state()).row,31,'空白格也可聚焦高亮');
+  const shot = await call('Page.captureScreenshot',{format:'png'});
+  await fs.writeFile(path.join(os.tmpdir(),'lms-spotlight-scroll.png'),Buffer.from(shot.data,'base64'));
+  await click('.nav-item[data-view="settings"]'); await delay(300); await click('.settings-nav-item[data-settings="table"]');
+  await click('#s-table-spotlight'); await evaluate(`saveSettings(true)`);
+  await restartBackend(); await call('Page.reload'); await loaded();
+  assert.equal(await evaluate(`_currentSettings['table-spotlight']`),false,'重启保留关闭设置');
+  await click('.nav-item[data-view="quickcalc"]'); await ready(); await delay(150);
+  assert.equal(await state(),null,'新建工作簿遵循设置');
+  await evaluate(`applySetting('table-spotlight',true,true)`); await select(1,3);
+  const visible = await call('Page.captureScreenshot',{format:'png'});
+  await fs.writeFile(path.join(os.tmpdir(),'lms-spotlight.png'),Buffer.from(visible.data,'base64'));
+  console.log('PASS: 聚光灯鼠标/方向键/多格选择/编辑/零值/切换/缩放/滚动/格式无污染/设置重启持久化');
+};

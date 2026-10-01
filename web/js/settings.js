@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
   fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
   'table-rowHeight': '40',
   'table-zebra': false,
+  'table-spotlight': true,
   'table-compact': false,
   primary: '#3b82f6',
   'sidebar-bg': '#1e293b',
@@ -160,6 +161,7 @@ let _systemThemeWatcherBound = false;
 function normalizeSettings(settings) {
   const normalized = { ...settings };
   normalized.minimalMode = normalized.minimalMode === true || normalized.minimalMode === 'true';
+  normalized['table-spotlight'] = normalized['table-spotlight'] !== false && normalized['table-spotlight'] !== 'false';
   // 升级旧版默认的 220px 留白为自动适应文字；仍支持手动调整。
   if (!normalized['sidebar-width'] || String(normalized['sidebar-width']) === '220') normalized['sidebar-width'] = 'auto';
   const legacySize = Number(normalized['fontSize-base']) || 13;
@@ -305,6 +307,9 @@ function applySetting(key, value, skipSave = false) {
       document.querySelectorAll('.spreadsheet, #priceTable table').forEach(t => {
         t.classList.toggle('table-zebra', value);
       });
+      break;
+    case 'table-spotlight':
+      window.LmsSpreadsheet?.updateSpotlight();
       break;
     case 'table-compact':
       if (value) {

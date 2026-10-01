@@ -15,7 +15,8 @@ async function main() {
   const engineTest = process.argv.includes('--engine');
   const managementTest = process.argv.includes('--management');
   const fontTest = process.argv.includes('--fonts');
-  const liveTest = process.argv.includes('--live') || managementTest || fontTest;
+  const spotlightTest = process.argv.includes('--spotlight');
+  const liveTest = process.argv.includes('--live') || managementTest || fontTest || spotlightTest;
   let url = pathToFileURL(path.join(__dirname, engineTest ? 'spreadsheet-engine.html' : 'spreadsheet-selection.html')).href + '?manual=1';
   let browser, backend, stopBackend;
   let launchError;
@@ -126,7 +127,7 @@ async function main() {
         await stopBackend();
         await startBackend(apiPort);
       };
-      await require(fontTest ? './font-settings-cases.cjs' : managementTest ? './management-mode-cases.cjs' : './spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
+      await require(spotlightTest ? './spotlight-cases.cjs' : fontTest ? './font-settings-cases.cjs' : managementTest ? './management-mode-cases.cjs' : './spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
       return;
     }
     if (engineTest) {
