@@ -321,10 +321,10 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   assert.equal(await evaluate(`document.querySelector('.member-card[data-emp-id="1"] .member-pairs').textContent.trim()`),'88 对','极简人员卡片读取已保存的快捷对数');
   assert.equal(await evaluate(`document.querySelector('.member-card[data-emp-id="1"] .member-wage').textContent`),'¥242.00','极简人员卡片工资与总工资表一致');
   await assertSingleLineStats();
-  const cardDecor = await evaluate(`(() => {const cards=Array.from(document.querySelectorAll('#memberList .member-card'));return cards.map(card=>({dept:card.dataset.deptId,gender:card.dataset.gender,bg:getComputedStyle(card).backgroundColor,pattern:getComputedStyle(card,'::before').backgroundImage,pointer:getComputedStyle(card,'::before').pointerEvents}));})()`);
+  const cardDecor = await evaluate(`(() => {const cards=Array.from(document.querySelectorAll('#memberList .member-card'));return cards.map(card=>({dept:card.dataset.deptId,gender:card.dataset.gender,bg:getComputedStyle(card).backgroundColor,pattern:getComputedStyle(card,'::before').maskImage,pointer:getComputedStyle(card,'::before').pointerEvents}));})()`);
   assert.equal(cardDecor[0].bg,cardDecor[1].bg,'同部门卡片保持同一背景色');
   assert.notEqual(cardDecor[0].bg,cardDecor[2].bg,'不同部门使用不同背景色');
-  assert.ok(cardDecor.some(card=>card.gender==='female' && card.pattern.includes('radial-gradient')) && cardDecor.some(card=>card.gender==='male' && card.pattern.includes('repeating-linear-gradient')),'男女分别使用圆点和斜纹图案');
+  assert.ok(cardDecor.some(card=>card.gender==='female' && card.pattern.includes('member-botanical.svg')) && cardDecor.some(card=>card.gender==='male' && card.pattern.includes('member-contours.svg')),'男女分别使用植物和等高线图案');
   assert.ok(cardDecor.every(card=>card.pointer==='none'),'背景图案不阻挡卡片点击');
   assert.ok(await evaluate(`parseFloat(getComputedStyle(document.querySelector('.member-dept-header .dept-large')).fontSize)>=20 && getComputedStyle(document.getElementById('personnelDeptBtn')).backgroundImage.includes('linear-gradient') && getComputedStyle(document.getElementById('personnelDeptBtn')).color==='rgb(255, 255, 255)'`),'部门标题放大，部门按钮使用鲜艳渐变和白色文字');
   await evaluate(`loadMembers({animate:false})`);

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" fill="none">
+  <defs>
+    <linearGradient id="fade" x1="0" y1="160" x2="190" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="black" stop-opacity="0"/>
+      <stop offset="1" stop-color="black"/>
+    </linearGradient>
+  </defs>
+  <g stroke="url(#fade)" stroke-width="1.2" stroke-linecap="round">
+    <path d="M36 220C33 170 70 176 75 130C79 88 58 55 99 23C135-6 199 5 229-26"/>
+    <path d="M54 224C45 177 88 174 92 133C96 97 74 65 109 38C143 12 206 26 234-10"/>
+    <path d="M74 230C59 185 103 175 109 139C115 104 92 76 121 53C151 28 212 47 242 9"/>
+    <path d="M96 232C78 196 120 179 126 145C132 115 111 88 135 70C162 48 213 63 246 30"/>
+    <path d="M122 235C100 208 136 182 143 152C150 126 132 102 151 87C174 69 216 82 248 54"/>
+    <path d="M147 237C128 218 154 190 161 163C168 140 153 118 169 106C188 91 222 100 250 78"/>
+    <path d="M177 239C156 224 173 199 180 176C186 154 177 139 190 128C206 114 229 121 251 106"/>
+  </g>
+  <circle cx="165" cy="42" r="4" stroke="black" stroke-opacity=".5"/>
+  <circle cx="192" cy="169" r="2.5" fill="black" fill-opacity=".35"/>
+</svg>

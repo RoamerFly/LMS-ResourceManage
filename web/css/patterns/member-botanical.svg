@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" fill="none">
+  <defs>
+    <linearGradient id="fade" x1="40" y1="200" x2="200" y2="15" gradientUnits="userSpaceOnUse">
+      <stop stop-color="black" stop-opacity="0"/>
+      <stop offset=".6" stop-color="black" stop-opacity=".8"/>
+      <stop offset="1" stop-color="black"/>
+    </linearGradient>
+  </defs>
+  <g stroke="url(#fade)" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M90 222C118 177 176 133 181 34"/>
+    <path d="M116 187C86 169 87 143 92 132C116 143 123 163 116 187Z"/>
+    <path d="M135 164C160 161 185 169 194 189C170 192 142 185 135 164Z"/>
+    <path d="M155 134C125 124 113 100 117 79C143 89 159 106 155 134Z"/>
+    <path d="M169 106C190 88 208 87 223 94C214 115 193 122 169 106Z"/>
+    <path d="M179 76C153 60 144 39 151 16C173 28 182 49 179 76Z"/>
+    <path d="M181 49C201 35 218 37 228 45C217 64 198 67 181 49Z"/>
+    <path d="M109 207C129 203 143 207 149 218"/>
+  </g>
+  <g stroke="black" stroke-opacity=".45" stroke-width="1">
+    <circle cx="115" cy="47" r="3"/>
+    <circle cx="200" cy="150" r="2"/>
+    <path d="M126 27V35M122 31H130"/>
+  </g>
+</svg>

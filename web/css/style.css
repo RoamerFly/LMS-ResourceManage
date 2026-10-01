@@ -2300,24 +2300,39 @@ body.minimal-mode #view-members .personnel-back { display: none; }
 .lms-column-drag-origin { position: fixed; z-index: 2095; pointer-events: none; background: rgba(255,255,255,.62); border: 2px dashed #a78bfa; border-radius: 4px; }
 @media (prefers-reduced-motion: reduce) { .lms-column-drag-counterpart { transition: none; } }
 
-/* 极简模式人员卡片：部门固定色调，男斜纹、女圆点。图案不阻挡单击和拖拽。 */
-body.minimal-mode #view-members .member-card {
+/* 人员卡片：部门浅色底与留白，右侧山水等高线 / 植物线稿。 */
+#view-members .member-card {
   overflow: hidden;
-  background: color-mix(in srgb, hsl(var(--member-dept-hue) 78% 76%) 26%, var(--card-bg));
-  border-color: color-mix(in srgb, hsl(var(--member-dept-hue) 62% 54%) 38%, var(--border));
+  isolation: isolate;
+  background-color: color-mix(in srgb, hsl(var(--member-dept-hue) 64% 78%) 18%, var(--card-bg));
+  background-image: radial-gradient(ellipse at 100% 0%, hsl(var(--member-dept-hue) 72% 72% / .23), transparent 72%);
+  border-color: color-mix(in srgb, hsl(var(--member-dept-hue) 50% 66%) 32%, var(--border));
+  box-shadow: 0 3px 12px hsl(var(--member-dept-hue) 32% 36% / .04), inset 0 1px 0 rgb(255 255 255 / .65);
 }
-body.minimal-mode #view-members .member-card::before {
-  content: ''; position: absolute; right: -25px; top: -35px; width: 170px; height: 170px; border-radius: 50%; pointer-events: none;
-  background-image: repeating-linear-gradient(45deg, transparent 0 10px, hsl(var(--member-dept-hue) 65% 45% / .14) 10px 12px);
+#view-members .member-card::before {
+  content: ''; position: absolute; right: -20px; top: -18px; width: 205px; height: 205px; z-index: 0; pointer-events: none;
+  background: hsl(var(--member-dept-hue) 45% 42% / .18);
+  -webkit-mask: url('patterns/member-contours.svg') center / contain no-repeat;
+  mask: url('patterns/member-contours.svg') center / contain no-repeat;
 }
-body.minimal-mode #view-members .member-card[data-gender="female"]::before {
-  background-image: radial-gradient(circle, hsl(var(--member-dept-hue) 65% 45% / .24) 1.8px, transparent 2px);
-  background-size: 13px 13px;
+#view-members .member-card[data-gender="female"]::before {
+  right: -12px; top: -10px;
+  -webkit-mask-image: url('patterns/member-botanical.svg');
+  mask-image: url('patterns/member-botanical.svg');
 }
-body.minimal-mode #view-members .member-card-info,
-body.minimal-mode #view-members .member-monthly-stats { position: relative; z-index: 1; }
-body.minimal-mode #view-members .member-gender-badge { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: #dbeafe; color: #1d4ed8; font-size: var(--font-size-16); }
-body.minimal-mode #view-members .member-card[data-gender="female"] .member-gender-badge { background: #fce7f3; color: #be185d; }
+#view-members .member-card::after {
+  content: ''; position: absolute; right: -36px; top: -56px; width: 154px; height: 154px; z-index: 0; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgb(219 234 254 / .7), transparent 70%);
+}
+#view-members .member-card[data-gender="female"]::after { background: radial-gradient(circle, rgb(252 231 243 / .65), transparent 70%); }
+#view-members .member-card:hover, #view-members .member-card:focus-visible {
+  border-color: hsl(var(--member-dept-hue) 46% 63%);
+  box-shadow: 0 6px 20px hsl(var(--member-dept-hue) 32% 36% / .10), inset 0 1px 0 rgb(255 255 255 / .65);
+}
+#view-members .member-card-info,
+#view-members .member-monthly-stats { position: relative; z-index: 1; }
+#view-members .member-gender-badge { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 10px; border: 1px solid rgb(255 255 255 / .8); background: #dbeafe; color: #1d4ed8; font-size: var(--font-size-16); }
+#view-members .member-card[data-gender="female"] .member-gender-badge { background: #fce7f3; color: #be185d; }
 body.minimal-mode #view-members .member-dept-header { background: color-mix(in srgb, hsl(var(--member-dept-hue) 78% 76%) 34%, var(--card-bg)); }
 body.minimal-mode #view-members .member-dept-header .dept-large { font-size: var(--font-size-20); font-weight: 700; }
 body.minimal-mode #view-members .personnel-dept-button { border: 1px solid #7c3aed; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; font-weight: 600; box-shadow: 0 4px 12px rgba(124,58,237,.24); }
