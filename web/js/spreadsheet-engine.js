@@ -8,6 +8,9 @@
   const inputSelector = 'input[data-emp], input.qc-price-input, input.qc-qty-input, input.qc-order-input, input.qc-order-qty-input';
   const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
   const notify = message => showToast(message, 'error');
+  const columnKind = cell => cell?.td.dataset.empId ? 'employee' : cell?.td.dataset.priceId ? 'price' : null;
+  const canSwapColumns = (source, target) => columnKind(source) && columnKind(source) === columnKind(target) &&
+    source.td.dataset.deptId === target.td.dataset.deptId;
 
   function getLayoutKey(type, year, month, mode) {
     return `lms.sheet-layout.${type}.${year}.${month}.${mode}`;
@@ -93,10 +96,15 @@
       columnCount = Math.max(columnCount, c);
     });
     const id = type === 'work-edit' ? 'work' : `dept-${table.dataset.deptId || index}`;
-    const columnKeys = Object.fromEntries([...cells.values()].filter(cell => cell.row === headerRows - 1)
+    const legacyColumnKeys = Object.fromEntries([...cells.values()].filter(cell => cell.row === headerRows - 1)
       .map(cell => [cell.col, cell.td.dataset.empId ? `emp-${cell.td.dataset.empId}` : textValue(cell.td)]));
+    const columnKeys = { ...legacyColumnKeys };
+    for (const cell of cells.values()) if (cell.row === headerRows - 1 && cell.td.dataset.priceId) {
+      columnKeys[cell.col] = `price-${cell.td.dataset.priceId}`;
+    }
     for (const cell of cells.values()) {
       cell.layoutKey = `${cell.td.closest('tr').dataset.rowKey || `header-${cell.row}`}|${columnKeys[cell.col] || cell.col}`;
+      cell.legacyLayoutKey = `${cell.td.closest('tr').dataset.rowKey || `header-${cell.row}`}|${legacyColumnKeys[cell.col] || cell.col}`;
     }
     const data = { id, name, cellData, mergeData, columnData,
       rowCount: type === 'quick-calc' ? Math.max(200, ...Array.from(rows.keys(), r => r + 101)) : Math.max(table.rows.length + 20, 50),
@@ -110,7 +118,7 @@
       (cell.td.tagName === 'TH' ? cell.td.textContent.trim() : 'readonly')]));
     const firstDataRow = rows.keys().next().value;
     const columnTemplates = new Map([...cells.values()].filter(cell => cell.row === firstDataRow).map(cell => [cell.col, cell]));
-    return { id, data, cells, rows, headerRows, fingerprint, columnCount, columnKeys, columnTemplates, table,
+    return { id, data, cells, rows, headerRows, fingerprint, columnCount, columnKeys, legacyColumnKeys, columnTemplates, table,
       rowTemplate: type === 'quick-calc' ? table.tBodies[0]?.rows[0]?.cloneNode(true) : null };
   }
 
@@ -185,7 +193,7 @@
     let origin = null;
     let settling = false;
     let suppressEditUntil = 0;
-    const headers = meta => [...meta.cells.values()].filter(cell => cell.row === meta.headerRows - 1 && cell.td.dataset.empId);
+    const headers = meta => [...meta.cells.values()].filter(cell => cell.row === meta.headerRows - 1 && columnKind(cell));
     const canvasElement = () => [...host.querySelectorAll('canvas')]
       .sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
     const canvasRect = () => canvasElement()?.getBoundingClientRect();
@@ -235,7 +243,7 @@
     };
     const paint = (x, y) => {
       const hit = headerAt(press.meta, x, y);
-      const allowed = hit?.cell.td.dataset.deptId === press.source.td.dataset.deptId;
+      const allowed = canSwapColumns(press.source, hit?.cell);
       press.target = allowed ? hit.cell : null;
       ghost.element.style.transform = `translate(${x - press.x}px, ${y - press.y}px)`;
       if (press.target && press.target !== press.source) {
@@ -250,7 +258,8 @@
         }
         if (counterpart) counterpart.element.style.transform = `translateX(${ghost.left - counterpart.left}px)`;
       } else { counterpart?.element.remove(); counterpart = null; }
-      preview.textContent = !hit ? '拖到同部门姓名上换位' : !allowed ? '只能在同一部门内换位' :
+      const kind = columnKind(press.source) === 'price' ? '单价' : '人员';
+      preview.textContent = !hit ? `拖到同部门${kind}列表头上换位` : !allowed ? `只能在同部门的${kind}列之间换位` :
         `${textValue(press.source.td)} → ${textValue(hit.cell.td)}`;
       preview.style.left = `${Math.min(x + 14, innerWidth - 240)}px`;
       preview.style.top = `${Math.min(y + 18, innerHeight - 48)}px`;
@@ -284,7 +293,7 @@
         ? { source: ghost, target: counterpart } : null;
       if (flights) { ghost = counterpart = null; settling = true; }
       clear();
-      // 让引擎先结束自身的选格手势，再保存与重建人员列。
+      // 让引擎先结束自身的选格手势，再保存与重建业务列。
       if (flights) {
         setTimeout(async () => {
           try {
@@ -321,7 +330,7 @@
       if (!press || press.active) return;
       const meta = instance.sheets.get(event.worksheet.getSheetId());
       const source = meta?.cells.get(`${event.row},${event.column}`);
-      if (!source?.td.dataset.empId || event.row !== meta.headerRows - 1) return;
+      if (!columnKind(source) || event.row !== meta.headerRows - 1) return;
       Object.assign(press, { meta, source });
       timer = setTimeout(() => {
         if (!press) return;
@@ -380,13 +389,15 @@
       const layout = savedLayout[sheet.id];
       if (!layout) continue;
       for (const cell of sheet.cells.values()) {
-        if (layout.cellStyles?.[cell.layoutKey]) sheet.data.cellData[cell.row][cell.col].s = layout.cellStyles[cell.layoutKey];
+        const savedStyle = layout.cellStyles?.[cell.layoutKey] || layout.cellStyles?.[cell.legacyLayoutKey];
+        if (savedStyle) sheet.data.cellData[cell.row][cell.col].s = savedStyle;
         if (type === 'quick-calc' && cell.row >= sheet.headerRows) {
           sheet.data.cellData[cell.row][cell.col].s = qcRowStyle(cell, cell.td.closest('tr').dataset.qcUsed === 'true', sheet.data.cellData[cell.row][cell.col].s);
         }
       }
       for (const [col, key] of Object.entries(sheet.columnKeys)) {
-        if (layout.columns?.[key]) sheet.data.columnData[col] = layout.columns[key];
+        const savedColumn = layout.columns?.[key] || layout.columns?.[sheet.legacyColumnKeys[col]];
+        if (savedColumn) sheet.data.columnData[col] = savedColumn;
       }
       sheet.data.rowData = Object.fromEntries([...sheet.rows].filter(([, tr]) => layout.rows?.[tr.dataset.rowKey])
         .map(([r, tr]) => [r, layout.rows[tr.dataset.rowKey]]));
@@ -520,32 +531,36 @@
       } finally { instance.syncing = false; }
     };
     let columnOrderBusy = false;
-    const swapEmployeeColumns = async (meta, source, target) => {
-      if (columnOrderBusy || instances.get(wrap) !== instance || source.td.dataset.deptId !== target.td.dataset.deptId) return;
+    const swapBusinessColumns = async (meta, source, target) => {
+      if (columnOrderBusy || instances.get(wrap) !== instance || !canSwapColumns(source, target)) return;
       columnOrderBusy = true;
       try {
         await flush(type);
         if (type === 'work-edit') { clearTimeout(window._weAutoSaveTimer); await autoSaveWorkRecords(); }
         else { clearTimeout(window._qcAutoSaveTimer); await autoSaveQc(); }
         const page = type === 'work-edit' ? 'work' : 'quickcalc';
+        const priceColumn = columnKind(source) === 'price';
+        const identity = priceColumn ? 'priceId' : 'empId';
         const ids = [...meta.cells.values()].filter(cell => cell.row === meta.headerRows - 1 &&
-          cell.td.dataset.empId && cell.td.dataset.deptId === source.td.dataset.deptId).map(cell => Number(cell.td.dataset.empId));
-        const sync = await setMemberOrderSync(page, false);
-        const order = await setManualEmployeeOrder(page, Number(source.td.dataset.deptId),
-          swapIds(ids, Number(source.td.dataset.empId), Number(target.td.dataset.empId)));
+          columnKind(cell) === columnKind(source) && cell.td.dataset.deptId === source.td.dataset.deptId)
+          .map(cell => Number(cell.td.dataset[identity]));
+        const sync = priceColumn ? null : await setMemberOrderSync(page, false);
+        const nextOrder = swapIds(ids, Number(source.td.dataset[identity]), Number(target.td.dataset[identity]));
+        const order = priceColumn ? await setQcPriceOrder(Number(source.td.dataset.deptId), nextOrder) :
+          await setManualEmployeeOrder(page, Number(source.td.dataset.deptId), nextOrder);
         if (sync?.ok === false || order?.ok === false) throw new Error('列顺序保存失败');
         const syncInput = document.querySelector(`#memberOrderSync_${page} input`);
-        if (syncInput) syncInput.checked = false;
+        if (syncInput && !priceColumn) syncInput.checked = false;
         if (type === 'work-edit') renderSpreadsheet(); else renderQcDeptTables();
         const next = instances.get(wrap);
         const sheet = next.book.setActiveSheet(meta.id);
         const moved = [...next.sheets.get(meta.id).cells.values()].find(cell =>
-          cell.row === meta.headerRows - 1 && cell.td.dataset.empId === source.td.dataset.empId);
+          cell.row === meta.headerRows - 1 && cell.td.dataset[identity] === source.td.dataset[identity]);
         if (moved) sheet.setActiveRange(sheet.getRange(moved.row, moved.col));
       } catch (error) { notify(error.message || '列顺序保存失败'); }
       finally { columnOrderBusy = false; }
     };
-    const columnDrag = attachColumnDrag(instance, swapEmployeeColumns);
+    const columnDrag = attachColumnDrag(instance, swapBusinessColumns);
     const personHeader = (meta, row, column) => {
       const header = meta?.cells.get(`${row},${column}`)?.td;
       return row === meta?.headerRows - 1 && header?.dataset.empId ? header : null;
@@ -788,7 +803,7 @@
           const at = headers.findIndex(cell => cell.td === header);
           const neighbor = headers[at + direction];
           move.disabled = !neighbor;
-          move.onclick = () => swapEmployeeColumns(meta, headers[at], neighbor);
+          move.onclick = () => swapBusinessColumns(meta, headers[at], neighbor);
           actionTarget.appendChild(move);
         }
       }

@@ -77,6 +77,7 @@ async function initQuickCalc() {
   _qcState.qcViewMode = 'qty';
   _qcState.qcWageDetail = null;
   await ensureMemberOrderPrefsLoaded('quickcalc', _qcState.employees.map(emp => emp.dept_id));
+  await ensureQcPriceOrderPrefsLoaded(_qcState.departments.map(dept => dept.id));
 
   // 自动加载上次保存的状态
   const year = parseInt(document.getElementById('qcYear')?.value || _state.currentYear);
@@ -138,7 +139,7 @@ function renderQcDeptTables() {
   let grandTotal = 0;
 
   for (const dept of departments) {
-    const deptSubs = subDepartments.filter(s => s.dept_id === dept.id);
+    const deptSubs = sortItemsByIds(subDepartments.filter(s => s.dept_id === dept.id), getQcPriceOrder(dept.id), sub => sub.id);
     const deptEmps = employees.filter(e => e.dept_id === dept.id);
 
     if (!deptSubs.length && !deptEmps.length) continue;
@@ -171,7 +172,8 @@ function renderQcDeptTables() {
       html += '<th style="background:#ede9fe;color:#5b21b6">订单数量</th>';
       html += '<th style="background:#fef3c7;color:#92400e">已做数量</th>';
       for (const sub of deptSubs) {
-        html += `<th style="min-width:70px;width:70px;background:#d1fae5;color:#065f46;position:sticky;top:0;z-index:10;text-align:center;">
+        html += `<th data-price-id="${sub.id}" data-dept-id="${dept.id}" title="长按拖动调整单价列顺序"
+          style="min-width:70px;width:70px;background:#d1fae5;color:#065f46;position:sticky;top:0;z-index:10;text-align:center;">
           ${escHtml(sub.name)}<br><span class="qc-th-subtext">单价</span>
         </th>`;
       }

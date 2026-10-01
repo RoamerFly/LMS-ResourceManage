@@ -54,6 +54,7 @@ let _currentView = 'overview';
 
 const MEMBER_ORDER_SYNC_PREFIX = 'memberOrderSync.';
 const MANUAL_EMP_ORDER_PREFIX = 'manualEmployeeOrder.';
+const MANUAL_PRICE_ORDER_PREFIX = 'manualPriceOrder.';
 const _orderPreferenceCache = {};
 
 function getOrderPreferenceKey(prefix, page, deptId = null) {
@@ -111,6 +112,23 @@ function setManualEmployeeOrder(page, deptId, empIds) {
     getOrderPreferenceKey(MANUAL_EMP_ORDER_PREFIX, page, deptId),
     JSON.stringify((empIds || []).map(id => parseInt(id, 10)).filter(Boolean))
   );
+}
+
+async function ensureQcPriceOrderPrefsLoaded(deptIds) {
+  await Promise.all(deptIds.map(deptId =>
+    loadOrderPreference(getOrderPreferenceKey(MANUAL_PRICE_ORDER_PREFIX, 'quickcalc', deptId), '[]')
+  ));
+}
+
+function getQcPriceOrder(deptId) {
+  try {
+    const ids = JSON.parse(_orderPreferenceCache[getOrderPreferenceKey(MANUAL_PRICE_ORDER_PREFIX, 'quickcalc', deptId)] || '[]');
+    return Array.isArray(ids) ? ids.map(Number).filter(id => Number.isSafeInteger(id) && id > 0) : [];
+  } catch { return []; }
+}
+
+function setQcPriceOrder(deptId, subIds) {
+  return saveOrderPreference(getOrderPreferenceKey(MANUAL_PRICE_ORDER_PREFIX, 'quickcalc', deptId), subIds);
 }
 
 function sortItemsByIds(items, ids, getId) {
