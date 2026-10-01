@@ -93,6 +93,11 @@ function compareMemberNamesByUnicode(aName, bName) {
   return aChars.length - bChars.length;
 }
 
+function memberDepartmentTone(deptId) {
+  // 由部门 ID 决定色相，换月、排序和重启后保持同部门的颜色一致。
+  return ((Number(deptId) || 0) * 137.508 % 360).toFixed(1);
+}
+
 function buildMemberDepartmentBlocks(emps, monthlyData = new Map()) {
   const groups = [];
   const groupMap = new Map();
@@ -110,7 +115,7 @@ function buildMemberDepartmentBlocks(emps, monthlyData = new Map()) {
   });
 
   return groups.map(group => `
-    <div class="dept-block member-dept-block" data-dept-id="${group.dept_id}">
+    <div class="dept-block member-dept-block" data-dept-id="${group.dept_id}" style="--member-dept-hue:${memberDepartmentTone(group.dept_id)}">
       <div class="dept-block-header member-dept-header">
         <span><span class="dept-large">${escHtml(group.dept_name)}</span></span>
         <span class="dept-totals">${group.employees.length} 人</span>
@@ -160,6 +165,7 @@ async function sortMembersByName(direction) {
 function buildMemberCard(emp, monthly = {}) {
   return `
     <div class="member-card" data-emp-id="${emp.id}" data-dept-id="${emp.dept_id}"
+      data-gender="${emp.gender === '女' ? 'female' : 'male'}" style="--member-dept-hue:${memberDepartmentTone(emp.dept_id)}"
       role="button" tabindex="0" aria-label="编辑${escHtml(emp.name)}"
       onclick="safeShowEditMemberModal(${emp.id}, event)"
       onkeydown="onMemberCardKeyDown(${emp.id}, event)"

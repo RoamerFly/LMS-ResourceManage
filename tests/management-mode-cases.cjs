@@ -203,6 +203,10 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await evaluate('qcToggleViewMode()');
   await click('#minimalNav [data-view="salary"]');
   await waitFor(`_currentView==='salary' && document.getElementById('salaryContent').textContent.includes('242.00')`);
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('#view-salary .salary-back')).display`),'none','极简工资页隐藏整个返回按钮区域');
+  assert.ok(await evaluate(`(() => {const card=document.querySelector('#view-salary .salary-page-card').getBoundingClientRect();const topbar=document.querySelector('.topbar').getBoundingClientRect();return card.top-topbar.bottom>=0 && card.top-topbar.bottom<=6 && parseFloat(getComputedStyle(document.querySelector('#view-salary .salary-page-card')).paddingTop)<=10;})()`),'极简工资页贴近顶部且压缩内边距');
+  await delay(3500);
+  await screenshot('lms-minimal-salary-compact');
   assert.equal(await evaluate(`get('/api/quick-calc-save?year=2026&month=9').then(data=>data.qty_data['1_0,1'])`),88,'顶部导航离开主页先保存快捷计算数据');
   await click('.minimal-home');
   await waitFor(`_currentView==='quickcalc' && LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready`);
@@ -211,6 +215,14 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await waitFor(`_currentView==='members' && document.getElementById('personnelPeriod').textContent.includes('快捷计算数据')`);
   assert.equal(await evaluate(`document.querySelector('.member-card[data-emp-id="1"] .member-pairs').textContent.trim()`),'88 对','极简人员卡片读取已保存的快捷对数');
   assert.equal(await evaluate(`document.querySelector('.member-card[data-emp-id="1"] .member-wage').textContent`),'¥242.00','极简人员卡片工资与总工资表一致');
+  const cardDecor = await evaluate(`(() => {const cards=Array.from(document.querySelectorAll('#memberList .member-card'));return cards.map(card=>({dept:card.dataset.deptId,gender:card.dataset.gender,bg:getComputedStyle(card).backgroundColor,pattern:getComputedStyle(card,'::before').backgroundImage,pointer:getComputedStyle(card,'::before').pointerEvents}));})()`);
+  assert.equal(cardDecor[0].bg,cardDecor[1].bg,'同部门卡片保持同一背景色');
+  assert.notEqual(cardDecor[0].bg,cardDecor[2].bg,'不同部门使用不同背景色');
+  assert.ok(cardDecor.some(card=>card.gender==='female' && card.pattern.includes('radial-gradient')) && cardDecor.some(card=>card.gender==='male' && card.pattern.includes('repeating-linear-gradient')),'男女分别使用圆点和斜纹图案');
+  assert.ok(cardDecor.every(card=>card.pointer==='none'),'背景图案不阻挡卡片点击');
+  assert.ok(await evaluate(`parseFloat(getComputedStyle(document.querySelector('.member-dept-header .dept-large')).fontSize)>=20 && getComputedStyle(document.getElementById('personnelDeptBtn')).backgroundImage.includes('linear-gradient') && getComputedStyle(document.getElementById('personnelDeptBtn')).color==='rgb(255, 255, 255)'`),'部门标题放大，部门按钮使用鲜艳渐变和白色文字');
+  await evaluate(`loadMembers({animate:false})`);
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.member-card[data-emp-id="1"]')).backgroundColor`),cardDecor[0].bg,'重新加载后部门颜色不改变');
   await screenshot('lms-minimal-personnel-monthly-cards');
   await click('.member-card[data-emp-id="1"]');
   await waitFor(`document.getElementById('modalOverlay').classList.contains('show')`);
@@ -245,8 +257,11 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await waitFor(`!isMinimalMode() && _currentView==='settings'`);
   assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.sidebar')).display`),'none','关闭极简模式恢复左栏');
   assert.equal(await evaluate('getSalarySource()'),'work','关闭极简恢复常规工资来源');
+  await click('.nav-item[data-view="salary"]');
+  await waitFor(`_currentView==='salary'`);
+  assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('#view-salary .salary-back')).display`),'none','常规模式保留返回主页入口');
   await click('.nav-item[data-view="overview"]');
   await waitFor(`_currentView==='overview'`);
   assert.equal(await evaluate(`document.querySelector('.overview-card[data-view="departments"],.overview-card[data-view="prices"]')`),null,'主页不重复显示已合并功能');
-  console.log('PASS: 人员大卡片整块单击/月度对数工资/空月份/框内滚动/居中部门分隔，蓝紫绿极简导航与计算主页，两种表头编辑/数据保留/部门树/订单单价/SQLite重启');
+  console.log('PASS: 极简工资页压缩/隐藏返回，人员部门配色/男女纹样/大标题/鲜艳按钮，月度数据/卡片点击/框内滚动/表头编辑/导航/SQLite重启');
 };

@@ -2234,3 +2234,37 @@ body.minimal-mode #view-members .personnel-back { display: none; }
 #view-members .member-wage { color: var(--success); }
 .member-editor-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 18px; }
 .member-editor-actions > div { display: flex; gap: 8px; }
+
+/* 极简模式人员卡片：部门固定色调，男斜纹、女圆点。图案不阻挡单击和拖拽。 */
+body.minimal-mode #view-members .member-card {
+  overflow: hidden;
+  background: color-mix(in srgb, hsl(var(--member-dept-hue) 78% 76%) 26%, var(--card-bg));
+  border-color: color-mix(in srgb, hsl(var(--member-dept-hue) 62% 54%) 38%, var(--border));
+}
+body.minimal-mode #view-members .member-card::before {
+  content: ''; position: absolute; right: -25px; top: -35px; width: 170px; height: 170px; border-radius: 50%; pointer-events: none;
+  background-image: repeating-linear-gradient(45deg, transparent 0 10px, hsl(var(--member-dept-hue) 65% 45% / .14) 10px 12px);
+}
+body.minimal-mode #view-members .member-card[data-gender="female"]::before {
+  background-image: radial-gradient(circle, hsl(var(--member-dept-hue) 65% 45% / .24) 1.8px, transparent 2px);
+  background-size: 13px 13px;
+}
+body.minimal-mode #view-members .member-card-info,
+body.minimal-mode #view-members .member-monthly-stats { position: relative; z-index: 1; }
+body.minimal-mode #view-members .member-gender-badge { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: #dbeafe; color: #1d4ed8; font-size: var(--font-size-16); }
+body.minimal-mode #view-members .member-card[data-gender="female"] .member-gender-badge { background: #fce7f3; color: #be185d; }
+body.minimal-mode #view-members .member-dept-header { background: color-mix(in srgb, hsl(var(--member-dept-hue) 78% 76%) 34%, var(--card-bg)); }
+body.minimal-mode #view-members .member-dept-header .dept-large { font-size: var(--font-size-20); font-weight: 700; }
+body.minimal-mode #view-members .personnel-dept-button { border: 1px solid #7c3aed; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; font-weight: 600; box-shadow: 0 4px 12px rgba(124,58,237,.24); }
+body.minimal-mode #view-members .personnel-dept-button:hover { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+body.minimal-mode #view-members .personnel-dept-button:focus-visible { outline: 2px solid #a78bfa; outline-offset: 3px; }
+
+/* 极简工资页贴近顶部；仅压缩屏幕布局，保留打印排版。 */
+@media screen {
+  body.minimal-mode #view-salary .salary-back { display: none !important; }
+  body.minimal-mode .content:has(#view-salary.active) { padding-top: 4px; }
+  body.minimal-mode #view-salary .salary-page-card { padding: 10px 14px; border-radius: 14px; }
+  body.minimal-mode #view-salary .card-title { margin-bottom: 6px; padding-bottom: 6px; }
+  body.minimal-mode #view-salary .salary-report { gap: 8px; }
+  body.minimal-mode #view-salary .grand-total { margin-bottom: 4px; padding: 9px 14px; }
+}
