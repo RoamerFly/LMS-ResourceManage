@@ -208,6 +208,7 @@ function compactQcRows(deptId) {
 async function initQuickCalc() {
   const sequence=++_qcInitSequence;
   const previous=window.LmsSpreadsheet?.getInstance('qcDeptTablesWrap');
+  const activeSheetId=previous?.book.getActiveSheet().getSheetId();
   if (previous) previous.ready=false;
   if (window.LmsSpreadsheet?.getInstance('qcDeptTablesWrap')) {
     await window.LmsSpreadsheet.flush('quick-calc');
@@ -275,6 +276,8 @@ async function initQuickCalc() {
   clearHistory();
 
   renderQcDeptTables();
+  const current=window.LmsSpreadsheet?.getInstance('qcDeptTablesWrap');
+  if (activeSheetId && current?.sheets.has(activeSheetId)) current.book.setActiveSheet(activeSheetId);
 }
 
 // ---- 渲染所有大部门表格 ----
