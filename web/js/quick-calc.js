@@ -100,17 +100,17 @@ async function createQcSheet() {
   finally { button.disabled = false; }
 }
 
-async function showSyncQcSheetModal() {
+async function showSyncQcSheetModal(sheetId) {
   await window.LmsSpreadsheet?.flush('quick-calc');
   if (!_qcCustomSheets.length && !_qcGridSheets.length) return toast('请先新增工作表', 'info');
-  const active = window.LmsSpreadsheet?.getInstance('qcDeptTablesWrap')?.book.getActiveSheet().getSheetId();
+  const active = sheetId || window.LmsSpreadsheet?.getInstance('qcDeptTablesWrap')?.book.getActiveSheet().getSheetId();
   const { year, month } = _qcLoadedPeriod;
-  openModal(`<div class="modal-header"><h3>同步工作表到其他日期</h3></div>
+  openModal(`<div class="modal-header"><h3>添加到其他月份</h3></div>
     <div class="form-group"><label>工作表</label><select id="qcSyncSheet" class="form-control">${_qcCustomSheets.map(s => `<option value="${s.id}" ${active === `dept-${s.id}` ? 'selected' : ''}>${escHtml(s.name)}</option>`).join('')}${_qcGridSheets.map(s=>`<option value="grid:${s.id}" ${active===s.data.id?'selected':''}>${escHtml(s.name)}</option>`).join('')}</select></div>
     <div class="form-group"><label>目标年份</label><input id="qcSyncYear" class="form-control" type="number" min="2000" max="2200" value="${year}"></div>
     <div class="qc-sync-months">${Array.from({ length: 12 }, (_, i) => `<label><input type="checkbox" name="qcSyncMonth" value="${i + 1}" ${i + 1 === (month === 12 ? 1 : month + 1) ? 'checked' : ''}> ${i + 1}月</label>`).join('')}</div>
-    <p class="text-muted">只同步工作表名称、所属部门与列结构，不复制订单、单价或对数。目标日期已有的录入数据保持原样；各月份独立保存。</p>
-    <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button id="qcSyncSheetBtn" class="btn btn-primary" onclick="syncQcSheet()">同步</button></div>`);
+    <p class="text-muted">将工作表添加到所选月份，已有月份不重复添加。普通资料自动同步，按月独立的列继续分别保存。</p>
+    <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button id="qcSyncSheetBtn" class="btn btn-primary" onclick="syncQcSheet()">添加</button></div>`);
   if (month === 12) document.getElementById('qcSyncYear').value = year + 1;
 }
 
@@ -123,7 +123,7 @@ async function syncQcSheet() {
     const chosen=document.getElementById('qcSyncSheet').value, grid=chosen.startsWith('grid:');
     const result = await post(grid?'/api/custom-grid-sheets/sync':'/api/quick-calc-sheets/sync', { sheet_id: Number(chosen.replace('grid:','')), source_year: _qcLoadedPeriod.year, source_month: _qcLoadedPeriod.month, targets });
     if (!result.ok) throw new Error(result.detail || result.error || '同步失败');
-    closeModal(); toast(`已同步到 ${result.added} 个新日期，已有日期保持不变`, 'success');
+    closeModal(); toast(`已添加到 ${result.added} 个新月份，已有月份保持不变`, 'success');
   } catch (error) { toast(error.message || '同步失败', 'error'); }
   finally { button.disabled = false; }
 }

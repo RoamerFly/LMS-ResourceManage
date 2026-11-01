@@ -2026,6 +2026,9 @@ body * {
 .bank-column-menu button { padding: 8px; color: inherit; background: transparent; border: none; cursor: pointer; font: inherit; }
 .lms-add-sheet-tab { flex: 0 0 auto; align-self: center; border: none; background: transparent; color: var(--primary); font-size: var(--sheet-tab-font-size); min-width: 34px; height: 30px; cursor: pointer; border-radius: 5px; }
 .lms-add-sheet-tab:hover { background: #ede9fe; }
+#qcExportBankBtn { background: #ea580c; border-color: #ea580c; color: #fff; }
+#qcExportBankBtn:hover { background: #c2410c; border-color: #c2410c; }
+#qcExportBankBtn:focus-visible { outline: 2px solid #fb923c; outline-offset: 2px; }
 #qcExportBankBtn[hidden] { display: none !important; }
 #view-quickcalc .independent-sheet .qc-grand-total,
 #view-quickcalc .independent-sheet .order-sync-toggle,

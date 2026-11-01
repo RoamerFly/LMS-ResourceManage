@@ -290,7 +290,13 @@
         button.textContent='删除';
         if (!removable) button.title='固定工作表不能删除';
         button.onclick=()=>{close();showDeleteQcSheetModal(id);};
-        menu.append(button);document.body.append(menu);
+        menu.append(button);
+        if (removable) {
+          const addToMonth=document.createElement('button');addToMonth.type='button';addToMonth.dataset.action='add-month';addToMonth.textContent='添加到其他月份';
+          addToMonth.onclick=()=>{close();void showSyncQcSheetModal(id);};
+          menu.append(addToMonth);
+        }
+        document.body.append(menu);
         menu.style.left=`${Math.min(event.clientX,innerWidth-menu.offsetWidth-8)}px`;
         menu.style.top=`${Math.min(event.clientY,innerHeight-menu.offsetHeight-8)}px`;
         return;

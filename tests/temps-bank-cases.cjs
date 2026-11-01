@@ -43,6 +43,8 @@ module.exports=async({evaluate,call,click,key,mouse,delay,restartBackend})=>{
   assert.equal(await evaluate(`get('/api/qc-salary-summary?year=2026&month=9').then(d=>d.flatMap(x=>x.employees).find(e=>e.emp_id===${temp}).wage)`),8.03,'后端临时工资使用主部门价格');
   const tempShot=await call('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(os.tmpdir(),'lms-temporary-sheet.png'),Buffer.from(tempShot.data,'base64'));
   await activate('bank-cards');assert.equal(await raw(1,3),'','银行卡金额默认空白');
+  assert.equal(await evaluate(`document.getElementById('qcExportBankBtn').textContent`),'导出工作表');
+  assert.equal(await evaluate(`getComputedStyle(document.getElementById('qcExportBankBtn')).backgroundColor`),'rgb(234, 88, 12)','导出按钮为橙色');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('#view-quickcalc .qc-grand-total')).display`),'none','独立表隐藏部门工资合计');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('#view-quickcalc button[onclick="clearQcPrices()"]')).display`),'none','独立表隐藏部门清空单价操作');
   const bankStyles=await evaluate(`JSON.stringify(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,1).getCellStyleData())`);
@@ -70,7 +72,10 @@ module.exports=async({evaluate,call,click,key,mouse,delay,restartBackend})=>{
   assert.equal(await raw(1,1),456,'独立自定义表可写入文本及数值');assert.equal(await evaluate(`document.getElementById('qcGrandTotal').textContent`),'¥8.03','独立表不参与工资计算');
   await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,1).setValue(789)`);
   await key('z',90,2);await ready();await activate(grid);assert.equal(await raw(1,1),456,'独立表撤销恢复原值');
-  await click('#qcSyncSheetsBtn');await waitFor(`document.getElementById('qcSyncSheet')`);
+  assert.equal(await evaluate(`document.getElementById('qcSyncSheetsBtn')`),null,'移除顶部同步工作表按钮');
+  const tabPoint=await evaluate(`(()=>{const r=document.querySelector('[data-u-comp="slide-tab-item"][data-id="${grid}"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  await mouse('mousePressed',tabPoint,{button:'right',buttons:2,clickCount:1});await mouse('mouseReleased',tabPoint,{button:'right',buttons:0,clickCount:1});
+  await waitFor(`document.querySelector('.sheet-tab-menu [data-action="add-month"]')?.textContent==='添加到其他月份'`);await click('.sheet-tab-menu [data-action="add-month"]');await waitFor(`document.getElementById('qcSyncSheet')`);
   assert.equal(await evaluate(`document.getElementById('qcSyncSheet').value`),'grid:'+await evaluate(`_qcGridSheets[0].id`),'同步下拉框支持独立自定义表');
   await click('#qcSyncSheetBtn');await waitFor(`!document.getElementById('modalOverlay').classList.contains('show')`);
   await period(10);await activate(grid);assert.equal(await raw(1,1),456,'未设置按月独立的列共享来源资料');
