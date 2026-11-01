@@ -114,6 +114,33 @@ def sync_custom_grid(sheet_id,year,month,targets):
             conn.execute('INSERT OR IGNORE INTO custom_grid_periods(sheet_id,year,month) VALUES (?,?,?)',(sheet_id,y,m))
         return {'ok':True,'added':conn.total_changes-before}
 
+
+def delete_month_sheet(kind, sheet_id, year, month):
+    """只移除当前月份的自建表及其数据，不修改其他月份或主部门表。"""
+    import json
+    if kind not in ('department','grid') or not 2000<=year<=2200 or not 1<=month<=12:
+        raise ValueError('工作表类型或年月无效')
+    with closing(get_connection()) as conn,conn:
+        if kind=='department':
+            if sheet_id>=0:
+                raise ValueError('主部门工作表不可删除')
+            if not conn.execute('SELECT 1 FROM quick_calc_sheet_periods WHERE sheet_id=? AND year=? AND month=?',(-sheet_id,year,month)).fetchone():
+                raise ValueError('本月没有此自建工作表')
+            saved=conn.execute('SELECT dept_rows,qty_data,row_meta FROM quick_calc_saves WHERE year=? AND month=?',(year,month)).fetchone()
+            if saved:
+                prefix=f'{sheet_id}_'
+                cleaned=[{key:value for key,value in json.loads(raw).items() if not key.startswith(prefix)} for raw in saved]
+                conn.execute('UPDATE quick_calc_saves SET dept_rows=?,qty_data=?,row_meta=?,updated_at=CURRENT_TIMESTAMP WHERE year=? AND month=?',
+                    (*[json.dumps(value,ensure_ascii=False) for value in cleaned],year,month))
+            conn.execute('DELETE FROM quick_calc_sheet_periods WHERE sheet_id=? AND year=? AND month=?',(-sheet_id,year,month))
+        else:
+            if sheet_id<=0:
+                raise ValueError('自定义工作表编号无效')
+            removed=conn.execute('DELETE FROM custom_grid_periods WHERE sheet_id=? AND year=? AND month=?',(sheet_id,year,month))
+            if not removed.rowcount:
+                raise ValueError('本月没有此自定义工作表')
+    return {'ok':True}
+
 # ── 全局设置 ────────────────────────────────────────────
 
 def get_app_setting(key):
@@ -1205,7 +1232,14 @@ def delete_data_by_filter(emp_id: int = None, year: int = None, month: int = Non
 def save_quick_calc(year: int, month: int, dept_rows: dict, qty_data: dict, row_meta: dict = None, bank_cells: dict = None, grid_states: dict = None):
     """保存快捷计算大部门分组表格的填写状态（按年月覆盖）"""
     import json
-    temporary_ids = {str(s['id']): s['dept_id'] for s in get_quick_calc_sheets(year,month) if s['is_temporary']}
+    sheets=get_quick_calc_sheets(year,month)
+    allowed={str(s['id']) for s in sheets}
+    # 已删除月份的迟到自动保存不能重新写回自建表内容。
+    exists=lambda key:not key.split('_')[0].startswith('-') or key.split('_')[0] in allowed
+    dept_rows={key:value for key,value in dept_rows.items() if exists(key)}
+    qty_data={key:value for key,value in qty_data.items() if exists(key)}
+    row_meta={key:value for key,value in (row_meta or {}).items() if exists(key)}
+    temporary_ids = {str(s['id']): s['dept_id'] for s in sheets if s['is_temporary']}
     # 临时表不重复保存主表订单、数量与单价，也不接受正式人员的对数。
     dept_rows = {key:value for key,value in dept_rows.items() if key.split('_')[0] not in temporary_ids}
     row_meta = {key:value for key,value in (row_meta or {}).items() if key.split('_')[0] not in temporary_ids}

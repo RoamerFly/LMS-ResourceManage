@@ -244,6 +244,20 @@
     let menu=null;
     const close=()=>{menu?.remove();menu=null;};
     const context=event=>{
+      const tab=event.target.closest('[data-u-comp="slide-tab-item"]');
+      if (tab) {
+        event.preventDefault();event.stopImmediatePropagation();close();
+        const id=tab.getAttribute('data-id');
+        const removable=_qcCustomSheets.some(s=>`dept-${s.id}`===id)||_qcGridSheets.some(s=>s.data.id===id);
+        menu=document.createElement('div');menu.className='bank-column-menu sheet-tab-menu';
+        const button=document.createElement('button');button.type='button';button.disabled=!removable;
+        button.textContent=removable?'删除本月工作表':'固定工作表，不能删除';
+        button.onclick=()=>{close();showDeleteQcSheetModal(id);};
+        menu.append(button);document.body.append(menu);
+        menu.style.left=`${Math.min(event.clientX,innerWidth-menu.offsetWidth-8)}px`;
+        menu.style.top=`${Math.min(event.clientY,innerHeight-menu.offsetHeight-8)}px`;
+        return;
+      }
       if (book.getActiveSheet().getSheetId()!=='bank-cards' || event.target.tagName!=='CANVAS') return;
       const sheet=book.getActiveSheet(), canvas=event.target.getBoundingClientRect(), scroll=sheet.getScrollState(), zoom=sheet.getZoom();
       const start=sheet.getRange(0,scroll.sheetViewStartColumn||0).getCellRect(), first=sheet.getRange(0,0).getCellRect();

@@ -527,6 +527,14 @@ async def api_sync_qc_sheet(payload: QuickCalcSheetSync):
         raise HTTPException(status_code=400, detail=str(error))
 
 
+@app.delete('/api/month-sheets/{kind}/{sheet_id}')
+async def api_delete_month_sheet(kind: str, sheet_id: int, year: int, month: int):
+    try:
+        return crud.delete_month_sheet(kind,sheet_id,year,month)
+    except ValueError as error:
+        raise HTTPException(status_code=400,detail=str(error))
+
+
 @app.get("/api/quick-calc-save")
 async def api_load_quick_calc(year: int, month: int):
     return crud.load_quick_calc(year, month)

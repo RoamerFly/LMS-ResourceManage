@@ -20,7 +20,8 @@ async function main() {
   const searchTest = process.argv.includes('--search');
   const qcSheetsTest = process.argv.includes('--qc-sheets');
   const tempsBankTest = process.argv.includes('--temps-bank');
-  const liveTest = process.argv.includes('--live') || managementTest || fontTest || spotlightTest || deletionTest || searchTest || qcSheetsTest || tempsBankTest;
+  const sheetDeleteTest = process.argv.includes('--sheet-delete');
+  const liveTest = process.argv.includes('--live') || managementTest || fontTest || spotlightTest || deletionTest || searchTest || qcSheetsTest || tempsBankTest || sheetDeleteTest;
   let url = pathToFileURL(path.join(__dirname, engineTest ? 'spreadsheet-engine.html' : 'spreadsheet-selection.html')).href + '?manual=1';
   let browser, backend, stopBackend;
   let launchError;
@@ -131,7 +132,7 @@ async function main() {
         await stopBackend();
         await startBackend(apiPort);
       };
-      await require(tempsBankTest ? './temps-bank-cases.cjs' : qcSheetsTest ? './qc-sheets-money-cases.cjs' : searchTest ? './cell-search-cases.cjs' : deletionTest ? './selection-deletion-cases.cjs' : spotlightTest ? './spotlight-cases.cjs' : fontTest ? './font-settings-cases.cjs' : managementTest ? './management-mode-cases.cjs' : './spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
+      await require(sheetDeleteTest ? './sheet-deletion-cases.cjs' : tempsBankTest ? './temps-bank-cases.cjs' : qcSheetsTest ? './qc-sheets-money-cases.cjs' : searchTest ? './cell-search-cases.cjs' : deletionTest ? './selection-deletion-cases.cjs' : spotlightTest ? './spotlight-cases.cjs' : fontTest ? './font-settings-cases.cjs' : managementTest ? './management-mode-cases.cjs' : './spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
       return;
     }
     if (engineTest) {

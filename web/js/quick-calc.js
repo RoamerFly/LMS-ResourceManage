@@ -44,6 +44,44 @@ async function showAddQcSheetModal() {
   document.getElementById('qcNewSheetName').focus();
 }
 
+function showDeleteQcSheetModal(sheetId) {
+  const grid=_qcGridSheets.find(s=>s.data.id===sheetId);
+  const department=_qcCustomSheets.find(s=>`dept-${s.id}`===sheetId);
+  const sheet=grid||department;
+  if (!sheet) return;
+  const {year,month}=_qcLoadedPeriod;
+  openModal(`<div class="modal-title">删除工作表</div>
+    <p>确定删除 <strong>${year}年${month}月 · ${escHtml(sheet.name)}</strong>？</p>
+    <p>将删除本月该工作表及填写内容。其他月份继续保留各自的数据。</p>
+    <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button>
+    <button id="qcDeleteSheetConfirm" class="btn btn-danger">删除本月工作表</button></div>`);
+  document.getElementById('qcDeleteSheetConfirm').onclick=async event=>{
+    const button=event.currentTarget;button.disabled=true;
+    const sequence=_qcInitSequence;
+    try {
+      await window.LmsSpreadsheet?.flush('quick-calc');
+      clearTimeout(window._qcAutoSaveTimer);
+      await autoSaveQc();
+      if (_qcLoadedPeriod.year!==year || _qcLoadedPeriod.month!==month) throw new Error('日期已切换，请在当前月份重新操作');
+      const result=await del(`/api/month-sheets/${grid?'grid':'department'}/${sheet.id}?year=${year}&month=${month}`);
+      if (!result.ok) throw new Error(result.detail||result.error||'删除失败');
+      if (_qcLoadedPeriod.year!==year || _qcLoadedPeriod.month!==month || sequence!==_qcInitSequence || _currentView!=='quickcalc') {
+        if (document.getElementById('qcDeleteSheetConfirm')===button) closeModal();
+        toast(`已删除${year}年${month}月的工作表`,'success');return;
+      }
+      if (grid) _qcGridSheets=_qcGridSheets.filter(s=>s.id!==grid.id);
+      else {
+        _qcCustomSheets=_qcCustomSheets.filter(s=>s.id!==department.id);
+        const prefix=department.id+'_';
+        for (const object of [_qcDeptRows,_qcState.qtyData,_qcState.rowMeta])
+          for (const key of Object.keys(object)) if (key.startsWith(prefix)) delete object[key];
+      }
+      closeModal();clearHistory();renderQcDeptTables();toast('已删除本月工作表','success');
+    } catch(error) {toast(error.message||'删除失败','error');}
+    finally {button.disabled=false;}
+  };
+}
+
 async function createQcSheet() {
   const name = document.getElementById('qcNewSheetName').value.trim();
   if (!name) return toast('请输入工作表名称', 'error');
@@ -818,6 +856,8 @@ function updateDeptRowTotals(rowKey) {
 // ---- 自动保存快捷计算状态 ----
 async function autoSaveQc() {
   normalizeQcRows();
+  const gridStates=window.LmsSpreadsheet?.captureGridStates()||{};
+  for (const sheet of _qcGridSheets) if (gridStates[sheet.data.id]) sheet.data=gridStates[sheet.data.id];
   const year = _qcLoadedPeriod?.year ?? parseInt(document.getElementById('qcYear')?.value || _state.currentYear);
   const month = _qcLoadedPeriod?.month ?? parseInt(document.getElementById('qcMonth')?.value || _state.currentMonth);
   const payload = JSON.parse(JSON.stringify({
@@ -826,7 +866,7 @@ async function autoSaveQc() {
     qty_data: _qcState.qtyData,
     row_meta: _qcState.rowMeta,
     ...(_qcBankSheet?.data ? { bank_cells: _qcState.bankCells || {} } : {}),
-    grid_states: window.LmsSpreadsheet?.captureGridStates() || {},
+    grid_states: gridStates,
   }));
   const saved = _qcSaveQueue.catch(() => {}).then(() => post('/api/quick-calc-save', payload));
   _qcSaveQueue = saved;

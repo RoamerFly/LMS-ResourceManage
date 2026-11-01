@@ -117,6 +117,39 @@ class QcSheetMoneyTests(unittest.TestCase):
         changed=crud.update_employee(emp['id'],emp['name'],emp['gender'],1,1,False)
         self.assertFalse(changed['ok'],'已有工资记录时不能直接改人员类型而丢失历史工资')
 
+    def test_delete_legacy_sheet_only_cleans_selected_month(self):
+        with closing(db.get_connection()) as conn,conn:
+            conn.execute("INSERT INTO quick_calc_sheets(id,name,dept_id,is_temporary) VALUES(1,'临时',1,0),(10,'保留表',1,0)")
+            conn.executemany('INSERT INTO quick_calc_sheet_periods VALUES (?,?,?)',[(s,2026,m) for s in (1,10) for m in (9,10)])
+        rows={'1_0':{'1':1},'-1_0':{'1':2},'-10_0':{'1':3}}
+        qty={'1_0,1':4,'-1_0,1':5,'-10_0,1':6}
+        meta={'1_0':{'orderNo':'主表'},'-1_0':{'orderNo':'删除'},'-10_0':{'orderNo':'保留'}}
+        for m in (9,10):crud.save_quick_calc(2026,m,rows,qty,meta)
+        before=crud.load_quick_calc(2026,10)
+        self.assertTrue(crud.delete_month_sheet('department',-1,2026,9)['ok'])
+        saved=crud.load_quick_calc(2026,9)
+        self.assertEqual(saved['dept_rows'],{'1_0':{'1':1},'-10_0':{'1':3}})
+        self.assertEqual(saved['qty_data'],{'1_0,1':4,'-10_0,1':6})
+        self.assertNotIn('-1_0',saved['row_meta'])
+        self.assertEqual(crud.load_quick_calc(2026,10),before)
+        self.assertEqual([s['id'] for s in crud.get_quick_calc_sheets(2026,9)],[-10])
+        self.assertIn(-1,[s['id'] for s in crud.get_quick_calc_sheets(2026,10)])
+        crud.save_quick_calc(2026,9,rows,qty,meta)
+        self.assertNotIn('-1_0',crud.load_quick_calc(2026,9)['dept_rows'],'迟到自动保存不能恢复已删除表内容')
+        self.assertEqual(crud.load_quick_calc(2026,10),before)
+        with self.assertRaises(ValueError):crud.delete_month_sheet('department',1,2026,9)
+        with self.assertRaises(ValueError):crud.delete_month_sheet('bank',1,2026,9)
+        with self.assertRaises(ValueError):crud.delete_month_sheet('department',-1,2026,9)
+
+    def test_delete_independent_sheet_keeps_other_months(self):
+        sheet=crud.create_custom_grid(2026,9,'工资表',10,4)['sheet']
+        crud.sync_custom_grid(sheet['id'],2026,9,[{'year':2026,'month':10}])
+        state=sheet['data'];state['cellData']={'0':{'0':{'v':'保留值','t':1}}}
+        crud.save_quick_calc(2026,10,{}, {},grid_states={state['id']:state})
+        self.assertTrue(crud.delete_month_sheet('grid',sheet['id'],2026,9)['ok'])
+        self.assertEqual(crud.get_custom_grid_sheets(2026,9),[])
+        self.assertEqual(crud.get_custom_grid_sheets(2026,10)[0]['data']['cellData']['0']['0']['v'],'保留值')
+
 
 if __name__ == '__main__':
     unittest.main()
