@@ -147,5 +147,13 @@ def init_database():
         cur.execute("ALTER TABLE quick_calc_saves ADD COLUMN row_meta TEXT NOT NULL DEFAULT '{}'")
         conn.commit()
 
+    # 旧人员默认为正式人员；旧自定义表保留原用途与已有录入，新建表只能为临时表。
+    for table, column, definition in [
+        ('employees', 'is_temporary', 'INTEGER NOT NULL DEFAULT 0'),
+        ('quick_calc_sheets', 'is_temporary', 'INTEGER NOT NULL DEFAULT 0'),
+    ]:
+        if column not in {r[1] for r in conn.execute(f'PRAGMA table_info({table})')}:
+            conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+    conn.commit()
     conn.close()
     print(f"[db] database ready: {DB_PATH}")

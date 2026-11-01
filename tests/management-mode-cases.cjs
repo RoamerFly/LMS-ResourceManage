@@ -56,6 +56,7 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
       assert.ok(await evaluate(`Array.from(document.querySelectorAll('.lms-column-drag-ghost')).some(el=>el.getAnimations().some(animation=>animation.playState==='running'))`),'松开后整列平滑吸附到交换位置');
     }
     await delay(500);
+    await waitFor(`document.querySelector('.lms-column-drag-ghost,.lms-column-drag-origin')===null`);
     assert.equal(await evaluate(`document.getElementById('modalOverlay').classList.contains('show')`),false,'长按换列不弹人员编辑');
     assert.equal(await evaluate(`document.querySelector('.lms-column-drag-preview')`),null,'松开或取消后移除拖拽提示');
     assert.equal(await evaluate(`document.querySelector('.lms-column-drag-ghost,.lms-column-drag-origin')`),null,'交换或取消后移除列影像');
@@ -343,7 +344,7 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await waitFor(`_currentView==='quickcalc'`);
   await evaluate(`navigateTo('work')`);
   assert.equal(await evaluate('_currentView'),'quickcalc','极简模式旧入口不能进入做货编辑');
-  await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready`);
+  await waitFor(`_currentView==='quickcalc' && LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready`);
   await delay(400);
   await longColumnDrag('qcDeptTablesWrap',0,qtyCol,qtyCol+1);
   await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready && LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(0,${qtyCol+1}).getValue()==='张三乙'`);
@@ -382,7 +383,7 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   assert.equal(await evaluate(`document.querySelector('.overview-card[data-view="departments"],.overview-card[data-view="prices"]')`),null,'主页不重复显示已合并功能');
   await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   await click('.nav-item[data-view="quickcalc"]');
-  await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready`);
+  await waitFor(`_currentView==='quickcalc' && LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready`);
   const secondSheetId = await evaluate(`Array.from(LmsSpreadsheet.getInstance('qcDeptTablesWrap').sheets.keys()).find(id=>id!=='dept-1')`);
   const secondDeptId = Number(secondSheetId.replace('dept-',''));
   await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.setActiveSheet(${JSON.stringify(secondSheetId)})`);
@@ -448,7 +449,7 @@ module.exports = async ({evaluate,call,click,key,mouse,delay,restartBackend}) =>
   await waitFor(`_state.workEmployees.some(emp=>emp.name==='做货表新增') && LmsSpreadsheet.getInstance('spreadsheetWrap')?.ready`);
   assert.equal(await evaluate(`JSON.stringify(_weRowMap)`),beforeWorkAdd,'做货表新增人员后原数据保留');
   await click('.nav-item[data-view="quickcalc"]');
-  await waitFor(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready`);
+  await waitFor(`_currentView==='quickcalc' && LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready`);
   await restartBackend();
   await call('Page.reload');
   await loaded();

@@ -9,3 +9,5 @@ data.db
 seed_data.py
 b.json
 /node_modules/
+/bank-card-template.xls
+/工资表模板-9月工资.xls

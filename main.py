@@ -11,6 +11,8 @@ import webbrowser
 from urllib import request
 from ctypes import wintypes
 
+webview.settings['ALLOW_DOWNLOADS'] = True
+
 # 解决 Windows 上的 stdout 缓冲问题
 sys.stdout.reconfigure(line_buffering=True)
 

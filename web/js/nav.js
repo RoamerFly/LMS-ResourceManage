@@ -103,13 +103,16 @@ async function saveLeavingSpreadsheet(view) {
   }
 }
 
+let _navigationSequence = 0;
 async function _doNavigateTo(view) {
+  const sequence=++_navigationSequence;
   const departmentShortcut = view === 'departments';
   const priceShortcut = view === 'prices';
   if (departmentShortcut) view = 'members';
   if (priceShortcut) view = 'orders';
   if (isMinimalMode() && !['quickcalc', 'members', 'salary', 'settings', 'member-detail'].includes(view)) view = 'quickcalc';
   await saveLeavingSpreadsheet(view);
+  if (sequence!==_navigationSequence) return;
 
   _currentView = view;
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));

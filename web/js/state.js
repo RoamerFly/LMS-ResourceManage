@@ -267,6 +267,7 @@ function pushHistory(type) {
       qcDeptRows: JSON.parse(JSON.stringify(_qcDeptRows)),
       qtyData: JSON.parse(JSON.stringify(_qcState.qtyData)),
       rowMeta: JSON.parse(JSON.stringify(_qcState.rowMeta)),
+      bankCells: JSON.parse(JSON.stringify(_qcState.bankCells || {})),
       timestamp: Date.now()
     };
   }
@@ -306,6 +307,7 @@ async function undo() {
       qcDeptRows: JSON.parse(JSON.stringify(_qcDeptRows)),
       qtyData: JSON.parse(JSON.stringify(_qcState.qtyData)),
       rowMeta: JSON.parse(JSON.stringify(_qcState.rowMeta)),
+      bankCells: JSON.parse(JSON.stringify(_qcState.bankCells || {})),
       timestamp: Date.now()
     };
   }
@@ -339,6 +341,7 @@ async function redo() {
       qcDeptRows: JSON.parse(JSON.stringify(_qcDeptRows)),
       qtyData: JSON.parse(JSON.stringify(_qcState.qtyData)),
       rowMeta: JSON.parse(JSON.stringify(_qcState.rowMeta)),
+      bankCells: JSON.parse(JSON.stringify(_qcState.bankCells || {})),
       timestamp: Date.now()
     };
   }
@@ -367,6 +370,7 @@ async function restoreSnapshot(snapshot) {
       _qcDeptRows = JSON.parse(JSON.stringify(snapshot.qcDeptRows));
       _qcState.qtyData = JSON.parse(JSON.stringify(snapshot.qtyData));
       _qcState.rowMeta = JSON.parse(JSON.stringify(snapshot.rowMeta || {}));
+      _qcState.bankCells = JSON.parse(JSON.stringify(snapshot.bankCells || {}));
       renderQcDeptTables();
       // 撤销/重做后自动保存到数据库
       if (typeof autoSaveQc === 'function') {

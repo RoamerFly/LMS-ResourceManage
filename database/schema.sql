@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS employees (
     dept_id INTEGER NOT NULL,
     sub_dept_id INTEGER NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
+    is_temporary INTEGER NOT NULL DEFAULT 0 CHECK(is_temporary IN (0,1)),
     FOREIGN KEY (dept_id) REFERENCES departments(id) ON DELETE CASCADE,
     FOREIGN KEY (sub_dept_id) REFERENCES sub_departments(id) ON DELETE CASCADE
 );
@@ -144,7 +145,29 @@ INSERT OR IGNORE INTO sub_departments (id, dept_id, name) VALUES (4, 2, '底部'
 CREATE TABLE IF NOT EXISTS quick_calc_sheets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    dept_id INTEGER NOT NULL REFERENCES departments(id)
+    dept_id INTEGER NOT NULL REFERENCES departments(id),
+    is_temporary INTEGER NOT NULL DEFAULT 1 CHECK(is_temporary IN (0,1))
+);
+
+CREATE TABLE IF NOT EXISTS quick_calc_bank_cells (
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    cells TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY(year, month)
+);
+
+CREATE TABLE IF NOT EXISTS custom_grid_sheets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    row_count INTEGER NOT NULL,
+    column_count INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS custom_grid_periods (
+    sheet_id INTEGER NOT NULL,
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    state TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY(sheet_id, year, month)
 );
 CREATE TABLE IF NOT EXISTS quick_calc_sheet_periods (
     sheet_id INTEGER NOT NULL REFERENCES quick_calc_sheets(id),

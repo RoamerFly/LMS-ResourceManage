@@ -2,6 +2,7 @@
 from pathlib import Path
 import socket
 import sys
+import shutil
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.dont_write_bytecode = True
@@ -12,6 +13,9 @@ assert test_dir.name.startswith('lms-sheet-native-')
 db.DB_PATH = str(test_dir / 'test-data.db')
 db.get_base_dir = lambda: str(test_dir)
 db.init_database()
+bank_template = Path(__file__).resolve().parents[1] / '工资表模板-9月工资.xls'
+if bank_template.exists():
+    shutil.copyfile(bank_template, test_dir / 'bank-card-template.xls')
 with db.get_connection() as conn:
     if not conn.execute('SELECT 1 FROM employees').fetchone():
         conn.executescript("""

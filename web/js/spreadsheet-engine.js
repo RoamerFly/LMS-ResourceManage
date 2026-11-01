@@ -27,6 +27,7 @@
       instance.syncing = true;
       try {
         for (const meta of instance.sheets.values()) {
+          if (meta.kind) continue;
           const sheet = instance.book.getSheetBySheetId(meta.id);
           for (const cell of meta.cells.values()) {
             const group = cell.row < meta.headerRows ? 'header' : 'body';
@@ -63,6 +64,7 @@
   function textValue(cell) {
     if (cell.closest('tr')?.dataset.qcUsed === 'false') return '';
     if (cell.dataset.sheetValue !== undefined) return Number(cell.dataset.sheetValue);
+    if (cell.dataset.sheetValueText !== undefined) return cell.dataset.sheetValueText;
     const input = cell.querySelector(inputSelector);
     if (input?.dataset.refField === 'orderNo') return input.value;
     if (input) return input.classList.contains('qc-order-qty-input') || input.classList.contains('qc-price-input') || input.classList.contains('qc-qty-input')
@@ -196,6 +198,82 @@
 
   function current() {
     return [...instances.values()].find(instance => instance.wrap.offsetParent !== null);
+  }
+
+  function makeIndependentSheet(data, kind, hash = '') {
+    data = JSON.parse(JSON.stringify(data));
+    const cells = new Map(), headerRows = kind === 'bank' ? 1 : 0;
+    for (let row=0;row<data.rowCount;row++) for (let col=0;col<data.columnCount;col++) {
+      const value = data.cellData?.[row]?.[col] || { v:'', t:1, s:{ ff:'Microsoft YaHei', fs:13, ht:1, vt:2 } };
+      if (kind === 'bank' && row > 0) {
+        value.v = _qcState.bankCells?.[`${row},${col}`] ?? value.v;
+        value.t = typeof value.v==='number'?2:1;
+      }
+      ((data.cellData ||= {})[row] ||= {})[col] = value;
+      const td=document.createElement('td'), input=row>=headerRows ? document.createElement('input') : null;
+      cells.set(`${row},${col}`, { row,col,td,input,baseStyle:value.s||{},layoutKey:`${row}|${col}` });
+    }
+    return { id:data.id,kind,data,cells,rows:new Map(),headerRows,columnCount:data.columnCount,
+      columnTemplates:new Map(),columnKeys:{},legacyColumnKeys:{},fingerprint:`${data.id}:${data.rowCount}:${data.columnCount}:${hash}` };
+  }
+
+  function captureGridStates() {
+    const instance=[...instances.values()].find(i=>i.type==='quick-calc');
+    if (!instance) return {};
+    const snapshot=instance.book.save(), states={};
+    for (const meta of instance.sheets.values()) if (meta.kind==='grid') {
+      const data=JSON.parse(JSON.stringify(snapshot.sheets[meta.id]));
+      for (const cols of Object.values(data.cellData||{})) for (const cell of Object.values(cols))
+        if (typeof cell.s==='string') cell.s=snapshot.styles[cell.s];
+      states[meta.id]=data;
+    }
+    return states;
+  }
+
+  function attachIndependentControls(instance) {
+    if (instance.type!=='quick-calc') return;
+    const {host,book}=instance;
+    const add=document.createElement('button');
+    add.className='lms-add-sheet-tab';add.type='button';add.textContent='＋';add.title='新增工作表';add.setAttribute('aria-label','新增工作表');
+    add.onclick=()=>{void showAddQcSheetModal();};
+    const place=()=>{
+      const tabs=host.querySelectorAll('[data-u-comp="slide-tab-item"]'), last=tabs[tabs.length-1];
+      if (last && last.nextElementSibling!==add) last.after(add);
+    };
+    const observer=new MutationObserver(place);observer.observe(host,{childList:true,subtree:true});place();
+    let menu=null;
+    const close=()=>{menu?.remove();menu=null;};
+    const context=event=>{
+      if (book.getActiveSheet().getSheetId()!=='bank-cards' || event.target.tagName!=='CANVAS') return;
+      const sheet=book.getActiveSheet(), canvas=event.target.getBoundingClientRect(), scroll=sheet.getScrollState(), zoom=sheet.getZoom();
+      const start=sheet.getRange(0,scroll.sheetViewStartColumn||0).getCellRect(), first=sheet.getRange(0,0).getCellRect();
+      const offset=start.x-first.x+(scroll.offsetX||0);
+      let column=-1;
+      for(let c=0;c<sheet.getMaxColumns();c++) {
+        const rect=sheet.getRange(0,c).getCellRect(),left=canvas.left+(rect.x-offset)*zoom;
+        if(event.clientX>=left && event.clientX<left+rect.width*zoom){column=c;break;}
+      }
+      if(column<0)return;
+      event.preventDefault();event.stopImmediatePropagation();close();
+      const enabled=(_qcBankSheet.blank_columns||[]).includes(column);
+      menu=document.createElement('div');menu.className='bank-column-menu';
+      const button=document.createElement('button');button.type='button';button.setAttribute('role','menuitemcheckbox');button.setAttribute('aria-checked',String(enabled));
+      button.textContent=`${enabled?'☑':'☐'} 新月份默认置空此列`;
+      button.onclick=async()=>{
+        const cols=new Set(_qcBankSheet.blank_columns||[]);enabled?cols.delete(column):cols.add(column);
+        const result=await post('/api/bank-sheet/blank-columns',{columns:[...cols]});
+        if(result.ok){_qcBankSheet.blank_columns=result.columns;toast('已保存规则，仅影响新月份','success');}
+        else toast(result.detail||'保存失败','error');
+        close();
+      };
+      menu.append(button);document.body.append(menu);
+      menu.style.left=`${Math.min(event.clientX,innerWidth-menu.offsetWidth-8)}px`;
+      menu.style.top=`${Math.min(event.clientY,innerHeight-menu.offsetHeight-8)}px`;
+    };
+    host.addEventListener('contextmenu',context,true);
+    const outside=event=>{if(menu&&!menu.contains(event.target))close();};
+    document.addEventListener('pointerdown',outside,true);
+    instance.disposables.push({dispose(){observer.disconnect();add.remove();close();host.removeEventListener('contextmenu',context,true);document.removeEventListener('pointerdown',outside,true);}});
   }
 
   function clearSelectedCells(instance, event) {
@@ -655,8 +733,12 @@
     // 两个业务页面只允许一个活动工作簿，避免隐藏表格抢占键盘和编辑器焦点。
     for (const otherWrap of instances.keys()) if (otherWrap !== wrap) dispose(otherWrap);
     const tables = Array.from(wrap.querySelectorAll('table.spreadsheet'));
-    if (!tables.length) return;
     const sheets = tables.map((table, index) => makeSheet(table, index, type));
+    if (type === 'quick-calc') {
+      if (typeof _qcBankSheet !== 'undefined' && _qcBankSheet?.data) sheets.push(makeIndependentSheet(_qcBankSheet.data,'bank',_qcBankSheet.template_hash));
+      if (typeof _qcGridSheets !== 'undefined') sheets.push(..._qcGridSheets.map(s=>makeIndependentSheet(s.data,'grid')));
+    }
+    if (!sheets.length) return;
     const fontSizes = sheetFontSizes();
     const year = type === 'work-edit' ? _state.currentYear : document.getElementById('qcYear')?.value;
     const month = type === 'work-edit' ? _state.currentMonth : document.getElementById('qcMonth')?.value;
@@ -667,6 +749,7 @@
       try { savedLayout = JSON.parse(localStorage.getItem(layoutKey) || '{}'); } catch { /* 首次使用默认样式 */ }
     }
     for (const sheet of sheets) {
+      if (sheet.kind) continue;
       const layout = savedLayout[sheet.id];
       if (!layout) continue;
       for (const cell of sheet.cells.values()) {
@@ -704,7 +787,7 @@
     wrap.append(host, source);
     const { createUniver, LocaleType, UniverSheetsCorePreset, zhCN } = window.LmsSheetEngine;
     const hiddenCommands = ['univer.command.undo', 'univer.command.redo', 'sheet.command.insert-row', 'sheet.command.insert-col', 'sheet.command.remove-row', 'sheet.command.remove-col',
-      'sheet.command.insert-sheet', 'sheet.command.delete-sheet', 'sheet.command.set-worksheet-name', 'sheet.command.set-range-merge',
+      'sheet.command.delete-sheet', 'sheet.command.set-worksheet-name', 'sheet.command.set-range-merge',
       'sheet.command.insert-row-before', 'sheet.command.insert-row-after', 'sheet.command.insert-col-before', 'sheet.command.insert-col-after',
       'sheet.command.insert-multi-rows-above', 'sheet.command.insert-multi-rows-after', 'sheet.command.insert-multi-cols-before',
       'sheet.command.insert-multi-cols-right', 'sheet.command.remove-row-by-range', 'sheet.command.remove-col-by-range', 'sheet.command.remove-sheet'];
@@ -729,6 +812,7 @@
       data = restored.data;
       // 撤销数字、样式时保留全局字体缩放。
       for (const meta of sheets) for (const [row, cells] of Object.entries(data.sheets[meta.id].cellData || {})) {
+        if (meta.kind) continue;
         const group = Number(row) < meta.headerRows ? 'header' : 'body';
         if ((restored.fontSizes?.[group] ?? 13) === fontSizes[group]) continue;
         for (const cell of Object.values(cells)) {
@@ -751,6 +835,7 @@
       const snapshot = book.save();
       const layouts = {};
       for (const meta of instance.sheets.values()) {
+        if (meta.kind) continue;
         const sheet = snapshot.sheets[meta.id];
         const cellStyles = {};
         for (const cell of meta.cells.values()) {
@@ -774,7 +859,7 @@
     const extendColumns = event => {
       if (event.workbook.getId() !== book.getId() || instances.get(wrap) !== instance) return;
       const meta = instance.sheets.get(event.worksheet.getSheetId());
-      if (!meta) return;
+      if (!meta || meta.kind) return;
       const visible = event.worksheet.getVisibleRange();
       const edge = Math.max(visible?.endColumn ?? 0, ...((event.selections || []).map(range => range.endColumn)));
       if (edge < meta.data.columnCount - 20) return;
@@ -804,6 +889,7 @@
     listen(api.Event.BeforeClipboardPaste, event => {
       if (type !== 'quick-calc' || event.workbook.getId() !== book.getId()) return;
       const meta = instance.sheets.get(event.worksheet.getSheetId());
+      if (meta?.kind) return;
       const selection = event.worksheet.getSelection()?.getActiveRange()?.getRange();
       if (!meta || !selection || selection.startRow < meta.headerRows) return;
       const table = event.html ? new DOMParser().parseFromString(event.html, 'text/html').querySelector('table') : null;
@@ -855,6 +941,39 @@
           sheet.setRowCount(meta.data.rowCount);
         }
       } finally { instance.syncing = false; }
+    };
+    const syncTemporarySheets = () => {
+      if (type !== 'quick-calc') return;
+      syncQcTemporaryRows();
+      for (const meta of instance.sheets.values()) {
+        if (meta.kind || !isQcTemporarySheet(meta.id.replace('dept-',''))) continue;
+        const id=meta.id.replace('dept-',''), used=getQcUsedRowCount(getQcSheetDeptId(id));
+        ensureQcCapacity(meta,used+meta.headerRows+1);
+        for (let r=meta.headerRows;r<meta.headerRows+used;r++) getCell(meta,r,0);
+        const patches={}, emps=getQcSheetEmployees(id);
+        for (const cell of meta.cells.values()) {
+          if (cell.row<meta.headerRows) continue;
+          const key=`${id}_${cell.row-meta.headerRows}`, row=_qcDeptRows[key]||{}, ref=_qcState.rowMeta[key]||{};
+          const header=meta.cells.get(`${meta.headerRows-1},${cell.col}`)?.td;
+          let value='';
+          if (cell.col===0) value=ref.orderNo??'';
+          else if (cell.col===1) value=ref.orderQty??'';
+          else if (cell.col===2) value=cell.row<meta.headerRows+used ? emps.reduce((sum,e)=>sum+Number(_qcState.qtyData[`${key},${e.id}`]||0),0) : '';
+          else if (header?.dataset.priceId) value=row[header.dataset.priceId]??'';
+          else if (header?.dataset.empId) {
+            const qty=_qcState.qtyData[`${key},${header.dataset.empId}`];
+            const emp=emps.find(e=>e.id===Number(header.dataset.empId));
+            value=qty??'';
+            if (_qcState.qcViewMode==='wage' && hasQcValue(qty)) value=wageAmount(qty,row[emp?.sub_dept_id]||0);
+          }
+          if (cell.input) cell.input.value=String(value);
+          const inUse=cell.row<meta.headerRows+used;
+          (patches[cell.row]||={})[cell.col]={v:value===''?null:value,p:null,f:null,t:typeof value==='number'?2:1,s:qcRowStyle(cell,inUse)};
+        }
+        instance.syncing=true;
+        try {api.syncExecuteCommand('sheet.mutation.set-range-values',{unitId:book.getId(),subUnitId:meta.id,cellValue:patches});}
+        finally {instance.syncing=false;}
+      }
     };
     let columnOrderBusy = false;
     const swapBusinessColumns = async (meta, source, target) => {
@@ -915,13 +1034,21 @@
     listen(api.Event.BeforeSheetEditStart, event => {
       if (columnDrag.suppressEdit()) { event.cancel = true; return; }
       const meta = instance.sheets.get(event.worksheet.getSheetId());
+      if (meta?.kind) {
+        event.cancel = event.row < meta.headerRows || event.row >= meta.data.rowCount || event.column >= meta.columnCount;
+        return;
+      }
+      if (type==='quick-calc' && isQcTemporarySheet(meta.id.replace('dept-','')) && event.row>=meta.headerRows+getQcUsedRowCount(getQcSheetDeptId(meta.id.replace('dept-','')))) {
+        event.cancel=true;notify('请先在主部门表填写此行的订单或单价');return;
+      }
       const addHeader = meta?.cells.get(`${event.row},${event.column}`)?.td;
       if (meta && event.row === meta.headerRows - 1 &&
         (addHeader?.dataset.addMember !== undefined || event.column >= meta.columnCount)) {
         event.cancel = true;
         // 空表头只通过双击新增；键入和F2仍维持只读。
         if (event.eventType === 3) void showAddMemberModal({
-          deptId: type === 'quick-calc' ? getQcSheetDeptId(Number(meta.id.replace('dept-', ''))) : null
+          deptId: type === 'quick-calc' ? getQcSheetDeptId(Number(meta.id.replace('dept-', ''))) : null,
+          isTemporary: type === 'quick-calc' && isQcTemporarySheet(meta.id.replace('dept-', ''))
         }); // Dblclick
         return;
       }
@@ -941,6 +1068,7 @@
     });
     listen(api.Event.BeforeCommandExecute, event => {
       if (instance.syncing) return;
+      if (instance.ready===false && !instance.flushing && /^sheet\.mutation\./.test(event.id)) { event.cancel=true;return; }
       if (event.id.startsWith('sheet.') && event.params?.unitId && event.params.unitId !== book.getId()) {
         event.cancel = true;
         return;
@@ -950,7 +1078,14 @@
         if (event.id.endsWith('undo')) void undo(); else void redo();
         return;
       }
+      const activeMeta=instance.sheets.get(event.params?.subUnitId||event.params?.sheetId||book.getActiveSheet().getSheetId());
+      if (activeMeta?.kind==='bank' && /^sheet\.mutation\./.test(event.id) && event.id!=='sheet.mutation.set-range-values') {
+        event.cancel=true;return;
+      }
       // 工资表结构由订单/部门/员工管理维护，避免通用行列操作改变数据对应关系。
+      if (event.id === 'sheet.command.insert-sheet' && type === 'quick-calc') {
+        event.cancel=true; void showAddQcSheetModal(); return;
+      }
       if (/^sheet\.(command|mutation)\.((insert|remove|delete|move)-(row|rows|col|cols|columns|sheet|range|multi-rows|multi-cols)($|-)|set-worksheet-name|set-range-merge|add-worksheet-merge|remove-worksheet-merge)/.test(event.id)) {
         event.cancel = true;
         return;
@@ -958,7 +1093,34 @@
       if (event.id === 'sheet.mutation.set-range-values') {
         const meta = instance.sheets.get(event.params?.subUnitId);
         if (!meta) { event.cancel = true; return; }
+        if (meta.kind) {
+          let writes=false;
+          for (const [r,cols] of Object.entries(event.params.cellValue||{})) for (const [c,patch] of Object.entries(cols||{})) {
+            const cell=meta.cells.get(`${r},${c}`);
+            if (!cell?.input) { delete cols[c]; continue; }
+            if (meta.kind==='bank') {
+              if (patch && !own(patch,'v') && !own(patch,'p')) { delete cols[c]; continue; }
+              let value=patch?.p?.body?.dataStream?.replace(/[\r\n]+$/,'') ?? patch?.v ?? '';
+              if ([0,1,6].includes(Number(c))) {
+                if (typeof value==='number' && !Number.isSafeInteger(value)) {
+                  event.cancel=true;notify('长账号或联行行号请以文本格式粘贴，避免数值精度丢失');return;
+                }
+                value=String(value);
+              }
+              cols[c]={v:value,t:typeof value==='number'?2:1,p:null,f:null,si:null,s:cell.baseStyle};
+            }
+            writes=true;
+          }
+          if (writes) recordHistory();
+          return;
+        }
         if (type === 'quick-calc') {
+          if (isQcTemporarySheet(meta.id.replace('dept-',''))) {
+            const firstUnused=meta.headerRows+getQcUsedRowCount(getQcSheetDeptId(meta.id.replace('dept-','')));
+            if (Object.entries(event.params.cellValue||{}).some(([r,cols])=>Number(r)>=firstUnused && Object.values(cols||{}).some(p=>hasInputValue(p?.v)))) {
+              event.cancel=true;notify('临时表只能录入主部门已有行');return;
+            }
+          }
           const requiredRows = Object.keys(event.params.cellValue || {}).reduce((count, row) =>
             Number.isSafeInteger(Number(row)) && Number(row) >= 0 ? Math.max(count, Number(row) + 1) : count, meta.data.rowCount);
           ensureQcCapacity(meta, requiredRows);
@@ -1041,6 +1203,16 @@
       for (const range of event.effectedRanges) {
         const meta = instance.sheets.get(range.getSheetId());
         if (!meta) continue;
+        if (meta.kind) {
+          if (meta.kind==='bank') {
+            const changed=range.getRange(), sheet=book.getSheetBySheetId(meta.id);
+            for (let r=Math.max(1,changed.startRow);r<=Math.min(meta.data.rowCount-1,changed.endRow);r++)
+              for (let c=Math.max(0,changed.startColumn);c<=Math.min(meta.columnCount-1,changed.endColumn);c++)
+                _qcState.bankCells[`${r},${c}`]=sheet.getRange(r,c).getRawValue()??'';
+          }
+          clearTimeout(window._qcAutoSaveTimer);window._qcAutoSaveTimer=setTimeout(()=>autoSaveQc(),500);
+          continue;
+        }
         const changedRange = range.getRange();
         const sheet = book.getSheetBySheetId(meta.id);
         const changedRows = new Set();
@@ -1082,6 +1254,7 @@
         }
         syncQcRows(meta, new Set(meta.rows.keys()), movedStyles);
       }
+      if (qcChanges.size) syncTemporarySheets();
     });
     listen(api.Event.CommandExecuted, event => {
       if (!/^sheet\.mutation\./.test(event.id) && event.id !== 'sheet.operation.set-zoom-ratio') return;
@@ -1091,6 +1264,10 @@
     const updateActions = () => {
       const sheet = book.getActiveSheet();
       const meta = instance.sheets.get(sheet.getSheetId());
+      if (type==='quick-calc') document.querySelector('#view-quickcalc .work-toolbar')?.classList.toggle('independent-sheet',!!meta?.kind);
+      const bankExport=document.getElementById('qcExportBankBtn');
+      if (bankExport) bankExport.hidden=meta?.kind!=='bank';
+      if (meta?.kind) { bar.hidden=true;return; }
       const active = sheet.getSelection()?.getCurrentCell();
       const tr = meta?.rows.get(active?.actualRow ?? active?.startRow);
       const column = active?.actualColumn ?? active?.startColumn;
@@ -1167,14 +1344,19 @@
     updateActions();
     instance.ready = true;
     attachCellSearch(instance);
+    attachIndependentControls(instance);
   }
 
   async function flush(type) {
     const instance = [...instances.values()].find(item => item.type === type);
-    if (instance?.book.isCellEditing()) await instance.book.endEditingAsync(true);
+    if (instance?.book.isCellEditing()) {
+      instance.flushing=true;
+      try { await instance.book.endEditingAsync(true); }
+      finally { instance.flushing=false; }
+    }
   }
 
-  window.LmsSpreadsheet = { mount, dispose, capture, captureNavigation, restoreNavigation, loadLayout, flush, updateTypography, updateSpotlight,
+  window.LmsSpreadsheet = { mount, dispose, capture, captureNavigation, restoreNavigation, loadLayout, flush, updateTypography, updateSpotlight, captureGridStates,
     prepareRestore(type, snapshot) { if (snapshot) pendingRestore.set(type, snapshot); },
     getInstance(wrapId) { return instances.get(document.getElementById(wrapId)); },
     focusInput(input) {

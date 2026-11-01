@@ -53,6 +53,10 @@ class QcSheetMoneyTests(unittest.TestCase):
 
     def test_custom_sheet_sync_isolation_and_payroll(self):
         sheet = crud.create_quick_calc_sheet(2026, 9, '补单', 1)['sheet']
+        # 升级前已存在的旧自定义表保持原数据口径。
+        with closing(db.get_connection()) as conn,conn:
+            conn.execute('UPDATE quick_calc_sheets SET is_temporary=0 WHERE id=?',(-sheet['id'],))
+        sheet['is_temporary']=False
         self.assertLess(sheet['id'], 0)
         key = f"{sheet['id']}_0"
         crud.save_quick_calc(2026, 9, {'1_0': {'1': 1.3}, key: {'1': 1.005}}, {'1_0,1': 10, f'{key},1': 1})
@@ -91,6 +95,27 @@ class QcSheetMoneyTests(unittest.TestCase):
             crud.sync_quick_calc_sheet(sheet['id'], 2026, 8, [{'year': 2027, 'month': 1}])
         with self.assertRaises(ValueError):
             crud.sync_quick_calc_sheet(sheet['id'], 2026, 9, [{'year': 2027, 'month': 13}])
+
+    def test_temporary_sheet_inherits_main_and_separates_people(self):
+        self.assertTrue(crud.add_employee('临时回归人员','女',1,1,True)['ok'])
+        emp=next(e for e in crud.get_employees() if e['is_temporary'])
+        sheet=crud.create_quick_calc_sheet(2026,9,'面部临时表',1)['sheet']
+        key=f"{sheet['id']}_0"
+        crud.save_quick_calc(2026,9,{'1_0':{'1':1.005},key:{'1':999}},
+            {'1_0,1':10,f"{key},{emp['id']}":3,f'{key},1':500},
+            {'1_0':{'orderNo':'000123','orderQty':20},key:{'orderNo':'伪造'}})
+        saved=crud.load_quick_calc(2026,9)
+        self.assertEqual(saved['dept_rows'][key],{'1':1.005})
+        self.assertEqual(saved['row_meta'][key],{'orderNo':'000123','orderQty':20})
+        self.assertNotIn(f'{key},1',saved['qty_data'])
+        result=crud.get_qc_salary_summary(2026,9)[0]['employees']
+        self.assertEqual(next(e for e in result if e['emp_id']==1)['wage'],10.05)
+        self.assertEqual(next(e for e in result if e['emp_id']==emp['id'])['wage'],3.02)
+        with closing(db.get_connection()) as conn:
+            stored=json.loads(conn.execute('SELECT dept_rows FROM quick_calc_saves').fetchone()[0])
+        self.assertNotIn(key,stored)
+        changed=crud.update_employee(emp['id'],emp['name'],emp['gender'],1,1,False)
+        self.assertFalse(changed['ok'],'已有工资记录时不能直接改人员类型而丢失历史工资')
 
 
 if __name__ == '__main__':

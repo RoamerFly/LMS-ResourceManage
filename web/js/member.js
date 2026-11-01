@@ -178,6 +178,7 @@ function buildMemberCard(emp, monthly = {}) {
       <div class="member-card-info">
         <div class="member-card-title"><span class="member-name member-list-name-color">${escHtml(emp.name)}</span>
         <span class="member-gender-badge" title="${escHtml(emp.gender)}">${emp.gender === '女' ? '♀' : '♂'}</span></div>
+        ${emp.is_temporary ? '<span class="temporary-member-badge">临时人员</span>' : ''}
         <span class="dept-sub">${escHtml(emp.sub_dept_name)}</span>
       </div>
       <div class="member-monthly-stats">
@@ -445,6 +446,7 @@ async function showAddMemberModal(options = {}) {
     _state.subDepartments = subs;
     openModal(`
       <div class="modal-title">添加人员</div>
+      <div class="form-group"><label><input type="checkbox" id="m-temporary" ${options.isTemporary ? 'checked' : ''}> 临时人员（仅显示在部门临时工作表）</label></div>
       <div class="form-row">
         <div class="form-group"><label>姓名</label><input id="m-name" type="text" placeholder="输入姓名"></div>
         <div class="form-group"><label>性别</label><select id="m-gender"><option value="男">男</option><option value="女">女</option></select></div>
@@ -472,7 +474,7 @@ async function doAddMember() {
   const sub_dept_id = parseInt(document.getElementById('m-subdept').value, 10);
   if (!name) return toast('请输入姓名', 'error');
   if (!dept_id || !sub_dept_id) return toast('请选择部门', 'error');
-  const r = await post('/api/employees', { name, gender, dept_id, sub_dept_id });
+  const r = await post('/api/employees', { name, gender, dept_id, sub_dept_id, is_temporary: document.getElementById('m-temporary').checked });
   if (r.ok) {
     closeModal();
     toast('添加成功', 'success');
@@ -496,6 +498,7 @@ async function showEditMemberModal(empId) {
     _state.subDepartments = subs;
     openModal(`
       <div class="modal-title">编辑人员</div>
+      <div class="form-group"><label><input type="checkbox" id="m-temporary" ${emp.is_temporary ? 'checked' : ''}> 临时人员（仅显示在部门临时工作表）</label></div>
       <div class="form-row">
         <div class="form-group"><label>姓名</label><input id="m-name" type="text" value="${escHtml(emp.name)}"></div>
         <div class="form-group"><label>性别</label><select id="m-gender"><option value="男"${emp.gender === '男' ? ' selected' : ''}>男</option><option value="女"${emp.gender === '女' ? ' selected' : ''}>女</option></select></div>
@@ -519,7 +522,7 @@ async function doEditMember(empId) {
   const dept_id = parseInt(document.getElementById('m-dept').value, 10);
   const sub_dept_id = parseInt(document.getElementById('m-subdept').value, 10);
   if (!name || !dept_id || !sub_dept_id) return toast('请填写完整', 'error');
-  const r = await put(`/api/employees/${empId}`, { name, gender, dept_id, sub_dept_id });
+  const r = await put(`/api/employees/${empId}`, { name, gender, dept_id, sub_dept_id, is_temporary: document.getElementById('m-temporary').checked });
   if (r.ok) {
     closeModal();
     toast('保存成功', 'success');
@@ -530,7 +533,7 @@ async function doEditMember(empId) {
     else if (view === 'salary') await loadSalary({ animate: false });
     else await loadMembers({ animate: false });
   } else {
-    toast('保存失败', 'error');
+    toast(r.error || '保存失败', 'error');
   }
 }
 

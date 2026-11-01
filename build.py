@@ -14,7 +14,7 @@ import json
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_NAME = '立杰工资管理系统'
-USER_DATA_NAMES = ('data.db', 'window_settings.json', 'fonts')
+USER_DATA_NAMES = ('data.db', 'window_settings.json', 'fonts', 'bank-card-template.xls')
 
 
 def prepare_spreadsheet_assets():
@@ -49,7 +49,7 @@ def find_build_python():
             continue
         checked.append(python)
         result = subprocess.run(
-            [python, '-c', 'import PyInstaller, fastapi, uvicorn, starlette, multipart, webview'],
+            [python, '-c', 'import PyInstaller, fastapi, uvicorn, starlette, multipart, webview, xlrd, olefile'],
             cwd=PROJECT_DIR, capture_output=True, text=True,
         )
         if result.returncode == 0:
@@ -173,6 +173,8 @@ def build(debug=False):
             '--add-data', 'api_server.py;.',
             '--hidden-import', 'webview',
             '--hidden-import', 'webview.platforms.winforms',
+            '--hidden-import', 'xlrd',
+            '--hidden-import', 'olefile',
             '--clean',
             '--noconfirm',
         ]
@@ -192,6 +194,15 @@ def build(debug=False):
         result = subprocess.run(cmd, cwd=PROJECT_DIR)
     finally:
         restore_user_data(backup_dir)
+
+    # 模板含用户银行卡数据，只复制到本地发行目录，不放入代码仓库或公共资源包。
+    template_target = os.path.join(PROJECT_DIR, 'dist', APP_NAME, 'bank-card-template.xls')
+    if result.returncode == 0 and not os.path.exists(template_target):
+        for name in ('bank-card-template.xls', '工资表模板-9月工资.xls'):
+            source = os.path.join(PROJECT_DIR, name)
+            if os.path.isfile(source):
+                shutil.copy2(source, template_target)
+                break
     
     if result.returncode == 0:
         print()

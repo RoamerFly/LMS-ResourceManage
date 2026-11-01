@@ -2,7 +2,7 @@
 from fastapi import FastAPI, Query, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional, List
@@ -13,7 +13,7 @@ import uuid
 from urllib import parse, request
 
 from services.db import init_database, get_base_dir, get_resource_dir
-from services import crud
+from services import crud, bank_sheet
 
 DATA_DIR = get_base_dir()
 RESOURCE_DIR = get_resource_dir()
@@ -196,6 +196,7 @@ async def api_add_employee(body: dict):
     return crud.add_employee(
         body.get("name", ""), body.get("gender", "男"),
         body.get("dept_id"), body.get("sub_dept_id")
+        , is_temporary=body.get('is_temporary') is True
     )
 
 
@@ -213,6 +214,7 @@ async def api_update_employee(emp_id: int, body: dict):
         emp_id,
         body.get("name", ""), body.get("gender", "男"),
         body.get("dept_id"), body.get("sub_dept_id")
+        , is_temporary=body.get('is_temporary') if isinstance(body.get('is_temporary'), bool) else None
     )
 
 
@@ -426,18 +428,73 @@ async def api_delete_price_template(template_id: int):
 
 @app.post("/api/quick-calc-save")
 async def api_save_quick_calc(payload: dict):
+    bank_cells = payload.get('bank_cells')
+    if bank_cells is not None:
+        try:
+            bank_cells = bank_sheet.validate_cells(bank_cells)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error))
     return crud.save_quick_calc(
         year=payload["year"],
         month=payload["month"],
         dept_rows=payload.get("dept_rows", {}),
         qty_data=payload.get("qty_data", {}),
         row_meta=payload.get("row_meta", {}),
+        bank_cells=bank_cells,
+        grid_states=payload.get('grid_states',{}),
     )
 
 
 @app.get('/api/quick-calc-sheets')
 async def api_qc_sheets(year: int, month: int):
     return crud.get_quick_calc_sheets(year, month)
+
+
+@app.get('/api/bank-sheet')
+async def api_bank_sheet(year: int, month: int):
+    try:
+        return bank_sheet.load_sheet(year,month)
+    except ValueError as error:
+        return {'error':str(error)}
+
+
+@app.post('/api/bank-sheet/blank-columns')
+async def api_bank_blank_columns(payload: dict):
+    try:
+        return bank_sheet.set_blank_columns(payload.get('columns',[]))
+    except (ValueError, TypeError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get('/api/bank-sheet/export')
+async def api_bank_sheet_export(year: int, month: int):
+    try:
+        data=bank_sheet.export_sheet(year,month)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return Response(data, media_type='application/vnd.ms-excel',
+        headers={'Content-Disposition':f"attachment; filename*=UTF-8''{parse.quote(f'银行卡-{year}-{month:02d}.xls')}"})
+
+
+@app.get('/api/custom-grid-sheets')
+async def api_custom_grids(year: int,month: int):
+    return crud.get_custom_grid_sheets(year,month)
+
+
+@app.post('/api/custom-grid-sheets')
+async def api_create_custom_grid(payload: dict):
+    try:
+        return crud.create_custom_grid(int(payload['year']),int(payload['month']),str(payload['name']),int(payload['rows']),int(payload['columns']))
+    except (ValueError,KeyError,TypeError) as error:
+        raise HTTPException(status_code=400,detail=str(error))
+
+
+@app.post('/api/custom-grid-sheets/sync')
+async def api_sync_custom_grid(payload: dict):
+    try:
+        return crud.sync_custom_grid(int(payload['sheet_id']),int(payload['source_year']),int(payload['source_month']),payload['targets'])
+    except (ValueError,KeyError,TypeError) as error:
+        raise HTTPException(status_code=400,detail=str(error))
 
 
 class QuickCalcSheetCreate(BaseModel):

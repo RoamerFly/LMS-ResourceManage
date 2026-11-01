@@ -2,3 +2,5 @@ fastapi==0.111.0
 uvicorn[standard]==0.29.0
 pywebview==5.1
 python-multipart==0.0.9
+xlrd==2.0.2
+olefile==0.47

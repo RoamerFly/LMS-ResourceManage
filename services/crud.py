@@ -17,10 +17,10 @@ def line_money(quantity, price):
 
 def get_quick_calc_sheets(year: int, month: int):
     with closing(get_connection()) as conn:
-        rows = conn.execute('''SELECT s.id, s.name, s.dept_id FROM quick_calc_sheets s
+        rows = conn.execute('''SELECT s.id, s.name, s.dept_id, s.is_temporary FROM quick_calc_sheets s
             JOIN quick_calc_sheet_periods p ON s.id=p.sheet_id
             WHERE p.year=? AND p.month=? ORDER BY s.id''', (year, month)).fetchall()
-    return [{"id": -r["id"], "name": r["name"], "dept_id": r["dept_id"]} for r in rows]
+    return [{"id": -r["id"], "name": r["name"], "dept_id": r["dept_id"], "is_temporary": bool(r['is_temporary'])} for r in rows]
 
 
 def create_quick_calc_sheet(year: int, month: int, name: str, dept_id: int):
@@ -34,9 +34,9 @@ def create_quick_calc_sheet(year: int, month: int, name: str, dept_id: int):
             raise ValueError('当前月份已有同名工作表')
         if conn.execute('SELECT 1 FROM departments WHERE name=?', (name.strip(),)).fetchone():
             raise ValueError('工作表名称不能与部门工作表重名')
-        cur = conn.execute('INSERT INTO quick_calc_sheets(name,dept_id) VALUES (?,?)', (name.strip(), dept_id))
+        cur = conn.execute('INSERT INTO quick_calc_sheets(name,dept_id,is_temporary) VALUES (?,?,1)', (name.strip(), dept_id))
         conn.execute('INSERT INTO quick_calc_sheet_periods VALUES (?,?,?)', (cur.lastrowid, year, month))
-        return {"ok": True, "sheet": {"id": -cur.lastrowid, "name": name.strip(), "dept_id": dept_id}}
+        return {"ok": True, "sheet": {"id": -cur.lastrowid, "name": name.strip(), "dept_id": dept_id, "is_temporary": True}}
 
 
 def sync_quick_calc_sheet(sheet_id: int, source_year: int, source_month: int, targets: list):
@@ -65,8 +65,54 @@ def sync_quick_calc_sheet(sheet_id: int, source_year: int, source_month: int, ta
         return {"ok": True, "added": conn.total_changes - before}
 
 
-def _qc_department_prefixes(year, month, dept_id):
-    return tuple([f'{dept_id}_'] + [f"{s['id']}_" for s in get_quick_calc_sheets(year, month) if s['dept_id'] == dept_id])
+def _qc_department_prefixes(year, month, dept_id, temporary=False):
+    return tuple(([] if temporary else [f'{dept_id}_']) + [f"{s['id']}_" for s in get_quick_calc_sheets(year, month)
+        if s['dept_id'] == dept_id and s['is_temporary'] == bool(temporary)])
+
+
+def get_custom_grid_sheets(year, month):
+    import json
+    with closing(get_connection()) as conn:
+        rows=conn.execute('''SELECT s.*,p.state FROM custom_grid_sheets s JOIN custom_grid_periods p ON s.id=p.sheet_id
+            WHERE p.year=? AND p.month=? ORDER BY s.id''',(year,month)).fetchall()
+    result=[]
+    for row in rows:
+        data={'id':f"custom-grid-{row['id']}",'name':row['name'],'rowCount':row['row_count'],
+            'columnCount':row['column_count'],'cellData':{},'defaultRowHeight':30,'defaultColumnWidth':110}
+        data.update(json.loads(row['state']))
+        data.update(id=f"custom-grid-{row['id']}",name=row['name'])
+        result.append({'id':row['id'],'name':row['name'],'data':data})
+    return result
+
+
+def create_custom_grid(year,month,name,rows,columns):
+    if not name.strip() or len(name)>40 or not 1<=rows<=1000 or not 1<=columns<=100 or not 1<=month<=12 or not 2000<=year<=2200:
+        raise ValueError('请填写有效名称、年月与行列数')
+    if name.strip()=='银行卡':
+        raise ValueError('银行卡为固定工作表名称')
+    with closing(get_connection()) as conn,conn:
+        if conn.execute('''SELECT 1 FROM custom_grid_sheets s JOIN custom_grid_periods p ON s.id=p.sheet_id
+            WHERE p.year=? AND p.month=? AND s.name=?''',(year,month,name.strip())).fetchone():
+            raise ValueError('已有同名自定义工作表')
+        cur=conn.execute('INSERT INTO custom_grid_sheets(name,row_count,column_count) VALUES (?,?,?)',(name.strip(),rows,columns))
+        sid=cur.lastrowid
+        conn.execute('INSERT INTO custom_grid_periods(sheet_id,year,month) VALUES (?,?,?)',(sid,year,month))
+    return {'ok':True,'sheet':next(s for s in get_custom_grid_sheets(year,month) if s['id']==sid)}
+
+
+def sync_custom_grid(sheet_id,year,month,targets):
+    if not targets or len(targets)>120:
+        raise ValueError('请选择目标月份')
+    with closing(get_connection()) as conn,conn:
+        if not conn.execute('SELECT 1 FROM custom_grid_periods WHERE sheet_id=? AND year=? AND month=?',(sheet_id,year,month)).fetchone():
+            raise ValueError('来源月份不存在此表')
+        before=conn.total_changes
+        for target in targets:
+            y,m=int(target['year']),int(target['month'])
+            if not 2000<=y<=2200 or not 1<=m<=12:
+                raise ValueError('目标年月无效')
+            conn.execute('INSERT OR IGNORE INTO custom_grid_periods(sheet_id,year,month) VALUES (?,?,?)',(sheet_id,y,m))
+        return {'ok':True,'added':conn.total_changes-before}
 
 # ── 全局设置 ────────────────────────────────────────────
 
@@ -228,7 +274,7 @@ def get_employees():
     return [dict(r) for r in rows]
 
 
-def add_employee(name: str, gender: str, dept_id: int, sub_dept_id: int):
+def add_employee(name: str, gender: str, dept_id: int, sub_dept_id: int, is_temporary: bool = False):
     conn = get_connection()
     try:
         sort_order = conn.execute(
@@ -236,8 +282,8 @@ def add_employee(name: str, gender: str, dept_id: int, sub_dept_id: int):
             (dept_id,)
         ).fetchone()[0]
         conn.execute(
-            "INSERT INTO employees (name, gender, dept_id, sub_dept_id, sort_order) VALUES (?,?,?,?,?)",
-            (name, gender, dept_id, sub_dept_id, sort_order)
+            "INSERT INTO employees (name, gender, dept_id, sub_dept_id, sort_order, is_temporary) VALUES (?,?,?,?,?,?)",
+            (name, gender, dept_id, sub_dept_id, sort_order, int(is_temporary))
         )
         conn.commit()
         conn.close()
@@ -247,9 +293,19 @@ def add_employee(name: str, gender: str, dept_id: int, sub_dept_id: int):
         return {"ok": False, "error": "该员工已存在"}
 
 
-def update_employee(emp_id: int, name: str, gender: str, dept_id: int, sub_dept_id: int):
+def update_employee(emp_id: int, name: str, gender: str, dept_id: int, sub_dept_id: int, is_temporary=None):
     conn = get_connection()
-    current = conn.execute("SELECT dept_id FROM employees WHERE id=?", (emp_id,)).fetchone()
+    current = conn.execute("SELECT dept_id,is_temporary FROM employees WHERE id=?", (emp_id,)).fetchone()
+    if current and is_temporary is not None and bool(current['is_temporary']) != bool(is_temporary):
+        import json
+        used=conn.execute('SELECT 1 FROM work_records WHERE emp_id=? LIMIT 1',(emp_id,)).fetchone()
+        used=used or any(any(key.endswith(f',{emp_id}') for key in json.loads(row[0]))
+            for row in conn.execute('SELECT qty_data FROM quick_calc_saves'))
+        if used:
+            conn.close()
+            return {'ok':False,'error':'该人员已有历史对数，不能直接更改正式/临时类型；请新增对应类型人员，以保留历史工资'}
+    if is_temporary is not None:
+        conn.execute('UPDATE employees SET is_temporary=? WHERE id=?', (int(is_temporary), emp_id))
     if current and current["dept_id"] != dept_id:
         sort_order = conn.execute(
             "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM employees WHERE dept_id=?",
@@ -573,7 +629,7 @@ def _get_employee_qc_history(conn, emp):
         empWage = Decimal(0)
         empPairs = 0
         records = []
-        prefixes = _qc_department_prefixes(year, month, dept_id)
+        prefixes = _qc_department_prefixes(year, month, dept_id, emp['is_temporary'])
         for rowKey, row in dept_rows.items():
             if not rowKey.startswith(prefixes):
                 continue
@@ -865,7 +921,7 @@ def get_work_records(year: int, month: int):
     # 所有员工（用于表格列）
     emps = conn.execute("""
         SELECT e.id, e.name, e.dept_id, e.sub_dept_id,
-               d.name AS dept_name, sd.name AS sub_dept_name
+               d.name AS dept_name, sd.name AS sub_dept_name, e.is_temporary
         FROM employees e
         JOIN departments d ON e.dept_id=d.id
         JOIN sub_departments sd ON e.sub_dept_id=sd.id
@@ -1146,9 +1202,16 @@ def delete_data_by_filter(emp_id: int = None, year: int = None, month: int = Non
 
 # ── 快捷计算自动保存 ──────────────────────────────────────
 
-def save_quick_calc(year: int, month: int, dept_rows: dict, qty_data: dict, row_meta: dict = None):
+def save_quick_calc(year: int, month: int, dept_rows: dict, qty_data: dict, row_meta: dict = None, bank_cells: dict = None, grid_states: dict = None):
     """保存快捷计算大部门分组表格的填写状态（按年月覆盖）"""
     import json
+    temporary_ids = {str(s['id']): s['dept_id'] for s in get_quick_calc_sheets(year,month) if s['is_temporary']}
+    # 临时表不重复保存主表订单、数量与单价，也不接受正式人员的对数。
+    dept_rows = {key:value for key,value in dept_rows.items() if key.split('_')[0] not in temporary_ids}
+    row_meta = {key:value for key,value in (row_meta or {}).items() if key.split('_')[0] not in temporary_ids}
+    employees = {str(e['id']):e for e in get_employees()}
+    qty_data = {key:value for key,value in qty_data.items() if key.split(',')[-1] not in employees or
+        (bool(employees[key.split(',')[-1]]['is_temporary']) == (key.split('_')[0] in temporary_ids))}
     conn = get_connection()
     conn.execute("""
         INSERT INTO quick_calc_saves (year, month, dept_rows, qty_data, row_meta)
@@ -1162,6 +1225,15 @@ def save_quick_calc(year: int, month: int, dept_rows: dict, qty_data: dict, row_
           json.dumps(dept_rows, ensure_ascii=False),
           json.dumps(qty_data, ensure_ascii=False),
           json.dumps(row_meta or {}, ensure_ascii=False)))
+    if bank_cells is not None:
+        conn.execute('INSERT OR REPLACE INTO quick_calc_bank_cells(year,month,cells) VALUES (?,?,?)',
+            (year,month,json.dumps(bank_cells,ensure_ascii=False)))
+    for key,state in (grid_states or {}).items():
+        if not key.startswith('custom-grid-'):
+            continue
+        sid=int(key.replace('custom-grid-',''))
+        conn.execute('UPDATE custom_grid_periods SET state=? WHERE sheet_id=? AND year=? AND month=?',
+            (json.dumps(state,ensure_ascii=False),sid,year,month))
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -1179,11 +1251,21 @@ def load_quick_calc(year: int, month: int):
     conn.close()
     if not row:
         return None
-    return {
+    result = {
         "dept_rows": json.loads(row[0]),
         "qty_data": json.loads(row[1]),
         "row_meta": json.loads(row[2]),
     }
+    for sheet in get_quick_calc_sheets(year,month):
+        if not sheet['is_temporary']:
+            continue
+        for key,value in list(result['dept_rows'].items()):
+            if key.startswith(f"{sheet['dept_id']}_"):
+                target=f"{sheet['id']}_{key.split('_')[1]}"
+                result['dept_rows'][target]=dict(value)
+                if key in result['row_meta']:
+                    result['row_meta'][target]=dict(result['row_meta'][key])
+    return result
 
 
 def clear_quick_calc_saves():
@@ -1203,7 +1285,7 @@ def get_salary_summary(year: int, month: int):
     conn = get_connection()
     employees = conn.execute("""
         SELECT e.id, e.name, e.dept_id, e.sub_dept_id,
-               d.name AS dept_name, sd.name AS sub_dept_name
+               d.name AS dept_name, sd.name AS sub_dept_name, e.is_temporary
         FROM employees e
         JOIN departments d ON e.dept_id=d.id
         JOIN sub_departments sd ON e.sub_dept_id=sd.id
@@ -1290,7 +1372,7 @@ def get_qc_salary_summary(year: int, month: int):
     conn = get_connection()
     employees = conn.execute("""
         SELECT e.id, e.name, e.dept_id, e.sub_dept_id,
-               d.name AS dept_name, sd.name AS sub_dept_name
+               d.name AS dept_name, sd.name AS sub_dept_name, e.is_temporary
         FROM employees e
         JOIN departments d ON e.dept_id=d.id
         JOIN sub_departments sd ON e.sub_dept_id=sd.id
@@ -1325,7 +1407,7 @@ def get_qc_salary_summary(year: int, month: int):
         empWage = Decimal(0)
         empPairs = 0
         # 遍历该大部门的所有行
-        prefixes = _qc_department_prefixes(year, month, did)
+        prefixes = _qc_department_prefixes(year, month, did, emp['is_temporary'])
         for rowKey, row in dept_rows.items():
             if not rowKey.startswith(prefixes):
                 continue
