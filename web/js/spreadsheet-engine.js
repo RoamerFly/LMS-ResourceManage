@@ -206,7 +206,7 @@
     for (let row=0;row<data.rowCount;row++) for (let col=0;col<data.columnCount;col++) {
       const value = data.cellData?.[row]?.[col] || { v:'', t:1, s:{ ff:'Microsoft YaHei', fs:13, ht:1, vt:2 } };
       if (kind === 'bank' && row > 0) {
-        value.v = _qcState.bankCells?.[`${row},${col}`] ?? value.v;
+        value.v = value.v ?? '';
         value.t = typeof value.v==='number'?2:1;
       }
       ((data.cellData ||= {})[row] ||= {})[col] = value;
@@ -214,7 +214,7 @@
       cells.set(`${row},${col}`, { row,col,td,input,baseStyle:value.s||{},layoutKey:`${row}|${col}` });
     }
     return { id:data.id,kind,data,cells,rows:new Map(),headerRows,columnCount:data.columnCount,
-      columnTemplates:new Map(),columnKeys:{},legacyColumnKeys:{},fingerprint:`${data.id}:${data.rowCount}:${data.columnCount}:${hash}` };
+      columnTemplates:new Map(),columnKeys:{},legacyColumnKeys:{},fingerprint:`${data.id}:${hash}` };
   }
 
   // 人员名称不同，但同一小部门的列采用主表对应人员列的样式。
@@ -253,11 +253,11 @@
     }
   }
 
-  function captureGridStates() {
+  function captureGridStates(includeBank = false) {
     const instance=[...instances.values()].find(i=>i.type==='quick-calc');
     if (!instance) return {};
     const snapshot=instance.book.save(), states={};
-    for (const meta of instance.sheets.values()) if (meta.kind==='grid') {
+    for (const meta of instance.sheets.values()) if (meta.kind==='grid' || (includeBank && meta.kind==='bank')) {
       const data=JSON.parse(JSON.stringify(snapshot.sheets[meta.id]));
       for (const cols of Object.values(data.cellData||{})) for (const cell of Object.values(cols))
         if (typeof cell.s==='string') cell.s=snapshot.styles[cell.s];
@@ -295,28 +295,47 @@
         menu.style.top=`${Math.min(event.clientY,innerHeight-menu.offsetHeight-8)}px`;
         return;
       }
-      if (book.getActiveSheet().getSheetId()!=='bank-cards' || event.target.tagName!=='CANVAS') return;
-      const sheet=book.getActiveSheet(), canvas=event.target.getBoundingClientRect(), scroll=sheet.getScrollState(), zoom=sheet.getZoom();
-      const start=sheet.getRange(0,scroll.sheetViewStartColumn||0).getCellRect(), first=sheet.getRange(0,0).getCellRect();
-      const offset=start.x-first.x+(scroll.offsetX||0);
-      let column=-1;
+      const sheet=book.getActiveSheet(), meta=instance.sheets.get(sheet.getSheetId());
+      if (!meta?.kind || event.target.tagName!=='CANVAS') return;
+      const canvas=event.target.getBoundingClientRect(), scroll=sheet.getScrollState(), zoom=sheet.getZoom();
+      const first=sheet.getRange(0,0).getCellRect(), start=sheet.getRange(scroll.sheetViewStartRow||0,scroll.sheetViewStartColumn||0).getCellRect();
+      const offsetX=start.x-first.x+(scroll.offsetX||0), offsetY=start.y-first.y+(scroll.offsetY||0);
+      let column=-1,row=-1;
       for(let c=0;c<sheet.getMaxColumns();c++) {
-        const rect=sheet.getRange(0,c).getCellRect(),left=canvas.left+(rect.x-offset)*zoom;
+        const rect=sheet.getRange(0,c).getCellRect(),left=canvas.left+(rect.x-offsetX)*zoom;
         if(event.clientX>=left && event.clientX<left+rect.width*zoom){column=c;break;}
       }
-      if(column<0)return;
+      for(let r=0;r<sheet.getMaxRows();r++) {
+        const rect=sheet.getRange(r,0).getCellRect(),top=canvas.top+(rect.y-offsetY)*zoom;
+        if(event.clientY>=top && event.clientY<top+rect.height*zoom){row=r;break;}
+      }
       event.preventDefault();event.stopImmediatePropagation();close();
-      const enabled=(_qcBankSheet.blank_columns||[]).includes(column);
       menu=document.createElement('div');menu.className='bank-column-menu';
-      const button=document.createElement('button');button.type='button';button.setAttribute('role','menuitemcheckbox');button.setAttribute('aria-checked',String(enabled));
-      button.textContent=`${enabled?'☑':'☐'} 新月份默认置空此列`;
-      button.onclick=async()=>{
-        const cols=new Set(_qcBankSheet.blank_columns||[]);enabled?cols.delete(column):cols.add(column);
-        const result=await post('/api/bank-sheet/blank-columns',{columns:[...cols]});
-        if(result.ok){_qcBankSheet.blank_columns=result.columns;toast('已保存规则，仅影响新月份','success');}
-        else toast(result.detail||'保存失败','error');
-        close();
-      };
+      const button=document.createElement('button');button.type='button';
+      if (event.clientX < canvas.left+first.x*zoom && row>=meta.headerRows) {
+        for (const [label,action] of [
+          ['上方插入行',()=>sheet.insertRowsBefore(row,1)],
+          ['下方插入行',()=>sheet.insertRowsAfter(row,1)],
+          ['删除行',()=>sheet.deleteRows(row,1)]]) {
+          const item=document.createElement('button');item.textContent=label;
+          item.onclick=()=>{close();action();};menu.append(item);
+        }
+        button.textContent='新增行会同步到其他月份';button.disabled=true;
+      } else {
+        if(column<0){close();return;}
+        const config=meta.kind==='bank'?_qcBankSheet:_qcGridSheets.find(s=>s.data.id===meta.id);
+        const enabled=(config.blank_columns||[]).includes(column);
+        button.setAttribute('role','menuitemcheckbox');button.setAttribute('aria-checked',String(enabled));
+        button.textContent=`${enabled?'☑':'☐'} 按月份独立保存此列（新月置空）`;
+        button.onclick=async()=>{
+          await flush('quick-calc');await autoSaveQc();
+          const cols=new Set(config.blank_columns||[]);enabled?cols.delete(column):cols.add(column);
+          const result=await post(meta.kind==='bank'?'/api/bank-sheet/blank-columns':'/api/custom-grid-sheets/blank-columns',{sheet_key:meta.id,columns:[...cols]});
+          if(result.ok){config.blank_columns=result.columns;toast('已保存，各月份已有数据保留','success');}
+          else toast(result.detail||'保存失败','error');
+          close();
+        };
+      }
       menu.append(button);document.body.append(menu);
       menu.style.left=`${Math.min(event.clientX,innerWidth-menu.offsetWidth-8)}px`;
       menu.style.top=`${Math.min(event.clientY,innerHeight-menu.offsetHeight-8)}px`;
@@ -878,6 +897,12 @@
     data = { ...data, id: `lms-${type}-${++workbookSequence}` };
     const book = api.createWorkbook(data);
     for (const sheet of sheets) {
+      if (sheet.kind) {
+        const nativeData=JSON.parse(JSON.stringify(data.sheets[sheet.id]));
+        for(const cols of Object.values(nativeData.cellData||{})) for(const cell of Object.values(cols))
+          if(typeof cell.s==='string')cell.s=data.styles[cell.s];
+        Object.assign(sheet,makeIndependentSheet(nativeData,sheet.kind,typeof _qcBankSheet!=='undefined'?_qcBankSheet?.template_hash||'':''));
+      }
       sheet.data.rowCount = data.sheets[sheet.id].rowCount;
       sheet.data.columnCount = data.sheets[sheet.id].columnCount;
     }
@@ -1165,14 +1190,39 @@
         return;
       }
       const activeMeta=instance.sheets.get(event.params?.subUnitId||event.params?.sheetId||book.getActiveSheet().getSheetId());
-      if (activeMeta?.kind==='bank' && /^sheet\.mutation\./.test(event.id) && event.id!=='sheet.mutation.set-range-values') {
+      if (activeMeta?.kind && /^sheet\.(command|mutation)\.set-worksheet-row-count$/.test(event.id)) {
+        event.cancel=true;
+        const count=event.params.rowCount-activeMeta.data.rowCount;
+        if(count>0 && event.params.rowCount<=5000) book.getSheetBySheetId(activeMeta.id).insertRowsAfter(activeMeta.data.rowCount-1,count);
+        return;
+      }
+      const rowMutation=/^sheet\.mutation\.(insert-row|remove-rows|remove-row)$/.test(event.id);
+      const rowCommand=/^sheet\.command\.(insert|remove)-(row|multi-rows)/.test(event.id);
+      const independentRow=activeMeta?.kind && (rowMutation||rowCommand);
+      if (independentRow) {
+        const range=event.params?.range;
+        if (range && (range.startRow<activeMeta.headerRows ||
+            (event.id.includes('insert') && activeMeta.data.rowCount+range.endRow-range.startRow+1>5000) ||
+            (event.id.includes('remove') && activeMeta.data.rowCount-(range.endRow-range.startRow+1)<2))) {
+          event.cancel=true;notify('请保留表头，表格支持2至5000行');return;
+        }
+        if (rowMutation) {
+          recordHistory();
+          if (event.id==='sheet.mutation.insert-row') {
+            const source=activeMeta.data.rowData?.[Math.max(activeMeta.headerRows,range.startRow-1)];
+            event.params.rowInfo||={};
+            for(let r=range.startRow;r<=range.endRow;r++) event.params.rowInfo[r-range.startRow]={...source,...event.params.rowInfo[r-range.startRow],custom:{lmsRowId:crypto.randomUUID(),templateRow:source?.custom?.templateRow??Number(source?.custom?.lmsRowId?.replace('original-','')||Math.max(1,range.startRow-1))}};
+          }
+        }
+      }
+      if (activeMeta?.kind==='bank' && /^sheet\.mutation\./.test(event.id) && event.id!=='sheet.mutation.set-range-values' && !independentRow) {
         event.cancel=true;return;
       }
       // 工资表结构由订单/部门/员工管理维护，避免通用行列操作改变数据对应关系。
       if (event.id === 'sheet.command.insert-sheet' && type === 'quick-calc') {
         event.cancel=true; void showAddQcSheetModal(); return;
       }
-      if (/^sheet\.(command|mutation)\.((insert|remove|delete|move)-(row|rows|col|cols|columns|sheet|range|multi-rows|multi-cols)($|-)|set-worksheet-name|set-range-merge|add-worksheet-merge|remove-worksheet-merge)/.test(event.id)) {
+      if (!independentRow && /^sheet\.(command|mutation)\.((insert|remove|delete|move)-(row|rows|col|cols|columns|sheet|range|multi-rows|multi-cols)($|-)|set-worksheet-name|set-range-merge|add-worksheet-merge|remove-worksheet-merge)/.test(event.id)) {
         event.cancel = true;
         return;
       }
@@ -1282,6 +1332,35 @@
         }
         recordHistory();
       } else if (event.type === 2 && /^sheet\.mutation\.(set-col-width|set-row-height|set-range-style)/.test(event.id)) recordHistory();
+    });
+    listen(api.Event.CommandExecuted,event=>{
+      if (instance.syncing || !/^sheet\.mutation\.(insert-row|remove-row|remove-rows)$/.test(event.id)) return;
+      const meta=instance.sheets.get(event.params?.subUnitId);
+      if (!meta?.kind) return;
+      const snapshot=book.save(),data=snapshot.sheets[meta.id];
+      for(const [r,cols] of Object.entries(data.cellData||{})) for(const [c,cell] of Object.entries(cols))
+        if(typeof cell.s==='string')cell.s=snapshot.styles[cell.s];
+      // 新行采用相邻数据行的模板格式，不复制该行的值。
+      if(meta.kind==='bank' && event.id==='sheet.mutation.insert-row') {
+        const {startRow,endRow}=event.params.range,patch={};
+        for(let r=startRow;r<=endRow;r++) for(let c=0;c<data.columnCount;c++) {
+          const source=meta.cells.get(`${Math.max(1,startRow-1)},${c}`)?.baseStyle;
+          ((data.cellData||={})[r]||={})[c]={v:'',t:1,s:source};
+          (patch[r]||={})[c]=data.cellData[r][c];
+        }
+        instance.syncing=true;
+        try{api.syncExecuteCommand('sheet.mutation.set-range-values',{unitId:book.getId(),subUnitId:meta.id,cellValue:patch});}
+        finally{instance.syncing=false;}
+      }
+      const refreshed=makeIndependentSheet(data,meta.kind);
+      // bankCells 是旧坐标，结构变动后须以引擎的实际坐标重新生成。
+      if(meta.kind==='bank') {
+        _qcState.bankCells={};
+        for(const [r,cols] of Object.entries(data.cellData||{})) if(Number(r)>0)
+          for(const [c,cell] of Object.entries(cols)) _qcState.bankCells[`${r},${c}`]=cell.v??'';
+      }
+      Object.assign(meta,refreshed);
+      clearTimeout(window._qcAutoSaveTimer);window._qcAutoSaveTimer=setTimeout(()=>autoSaveQc(),500);
     });
     listen(api.Event.SheetValueChanged, event => {
       if (instance.syncing) return;

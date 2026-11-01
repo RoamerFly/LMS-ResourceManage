@@ -8,7 +8,8 @@ from contextlib import closing
 from pathlib import Path
 import olefile
 import xlrd
-from services import db,crud,bank_sheet
+from services import db,crud,bank_sheet,independent_sheet
+import copy
 
 
 class BankSheetTests(unittest.TestCase):
@@ -77,5 +78,72 @@ class BankSheetTests(unittest.TestCase):
         crud.save_quick_calc(2026,9,{}, {},grid_states={state['id']:state})
         crud.sync_custom_grid(grid['id'],2026,9,[{'year':2026,'month':10}])
         self.assertEqual(crud.get_custom_grid_sheets(2026,9)[0]['data']['cellData']['0']['0']['v'],'独立数据')
-        self.assertEqual(crud.get_custom_grid_sheets(2026,10)[0]['data']['cellData'],{})
+        self.assertEqual(crud.get_custom_grid_sheets(2026,10)[0]['data']['cellData']['0']['0']['v'],'独立数据')
         self.assertEqual(crud.get_qc_salary_summary(2026,9),[])
+
+    def test_insert_row_shared_structure_monthly_amounts_and_export(self):
+        sep=bank_sheet.load_sheet(2026,9)
+        oct=bank_sheet.load_sheet(2026,10)
+        sep['cells']['2,3']=101.11
+        crud.save_quick_calc(2026,9,{}, {},bank_cells=sep['cells'])
+        oct['cells']['2,3']=202.22
+        crud.save_quick_calc(2026,10,{}, {},bank_cells=oct['cells'])
+        # 模拟升级前只有 cells 的历史月份，验证迁移不会串行。
+        with closing(db.get_connection()) as conn,conn:
+            conn.execute('DELETE FROM independent_bank_periods WHERE year=2026 AND month=10')
+        data=bank_sheet.load_sheet(2026,9)['data']
+        # 在第2行之前插入一行，模拟引擎移动原行的 metadata。
+        for field in ('cellData','rowData'):
+            data[field]={str(int(r)+(int(r)>=2)):v for r,v in data[field].items()}
+        data['rowCount']+=1
+        data['rowData']['2']={'custom':{'lmsRowId':'new-test-row','templateRow':1}}
+        data['cellData']['2']={str(c):{'v':'','s':copy.deepcopy(data['cellData']['1'][str(c)]['s'])} for c in range(data['columnCount'])}
+        data['cellData']['2']['2']['v']='新增测试人员'
+        data['cellData']['2']['3']['v']=0
+        cells={f'{r},{c}':v.get('v','') for r,cols in data['cellData'].items() if int(r)>0 for c,v in cols.items()}
+        crud.save_quick_calc(2026,9,{}, {},bank_cells=cells,bank_state=data)
+        other=bank_sheet.load_sheet(2026,10)
+        self.assertEqual(other['data']['rowCount'],data['rowCount'])
+        self.assertEqual(other['cells']['2,2'],'新增测试人员')
+        self.assertEqual(other['cells']['2,3'],'')
+        self.assertEqual(other['cells']['3,3'],202.22)
+        self.assertEqual(bank_sheet.load_sheet(2026,9)['cells']['3,3'],101.11)
+        self.assertEqual(bank_sheet.load_sheet(2026,9)['cells']['2,3'],0)
+        future=bank_sheet.load_sheet(2027,1)
+        self.assertEqual(future['cells']['2,2'],'新增测试人员')
+        self.assertTrue(all(v=='' for k,v in future['cells'].items() if k.endswith(',3')))
+        exported=xlrd.open_workbook(file_contents=bank_sheet.export_sheet(2026,10),formatting_info=True).sheet_by_index(0)
+        self.assertEqual(exported.nrows,data['rowCount'])
+        self.assertEqual(exported.cell_value(2,2),'新增测试人员')
+        self.assertEqual(exported.cell_value(3,3),202.22)
+        self.assertEqual(exported.cell_xf_index(2,2),bank_sheet._template()['sheet'].cell_xf_index(1,2))
+        # 共享列覆盖更新，另一月付款金额仍独立。
+        other['cells']['2,2']='更名测试人员'
+        crud.save_quick_calc(2026,10,{}, {},bank_cells=other['cells'],bank_state=other['data'])
+        self.assertEqual(bank_sheet.load_sheet(2026,9)['cells']['2,2'],'更名测试人员')
+        self.assertEqual(bank_sheet.load_sheet(2026,9)['cells']['2,3'],0)
+
+    def test_custom_grid_monthly_columns_follow_row_identity(self):
+        item=crud.create_custom_grid(2026,9,'自定义测试',3,2)['sheet']
+        key=item['data']['id'];sid=item['id']
+        with closing(db.get_connection()) as conn,conn:
+            conn.execute('INSERT INTO app_settings VALUES (?,?)',(f'{key}_blank_columns','[1]'))
+        state=item['data'];state['cellData']={'1':{'0':{'v':'固定资料'},'1':{'v':10}},'2':{'1':{'v':20}}}
+        crud.save_quick_calc(2026,9,{}, {},grid_states={key:state})
+        crud.sync_custom_grid(sid,2026,9,[{'year':2026,'month':10}])
+        other=crud.get_custom_grid_sheets(2026,10)[0]['data']
+        self.assertEqual(other['cellData']['1']['1']['v'],'')
+        other['cellData']['1']['1']['v']=99
+        crud.save_quick_calc(2026,10,{}, {},grid_states={key:other})
+        state=crud.get_custom_grid_sheets(2026,9)[0]['data']
+        for field in ('cellData','rowData'):
+            state[field]={str(int(r)+(int(r)>=1)):v for r,v in state[field].items()}
+        state['rowCount']+=1
+        state['rowData']['1']={'custom':{'lmsRowId':'inserted'}}
+        state['cellData']['1']={'0':{'v':'新行'},'1':{'v':123}}
+        crud.save_quick_calc(2026,9,{}, {},grid_states={key:state})
+        other=crud.get_custom_grid_sheets(2026,10)[0]['data']
+        self.assertEqual(other['rowCount'],4)
+        self.assertEqual(other['cellData']['1']['0']['v'],'新行')
+        self.assertEqual(other['cellData']['1']['1']['v'],'')
+        self.assertEqual(other['cellData']['2']['1']['v'],99)

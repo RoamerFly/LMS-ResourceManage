@@ -73,7 +73,7 @@ module.exports=async({evaluate,call,click,key,mouse,delay,restartBackend})=>{
   await click('#qcSyncSheetsBtn');await waitFor(`document.getElementById('qcSyncSheet')`);
   assert.equal(await evaluate(`document.getElementById('qcSyncSheet').value`),'grid:'+await evaluate(`_qcGridSheets[0].id`),'同步下拉框支持独立自定义表');
   await click('#qcSyncSheetBtn');await waitFor(`!document.getElementById('modalOverlay').classList.contains('show')`);
-  await period(10);await activate(grid);assert.equal(await raw(1,1),'','同步后的独立表不复制来源数值');
+  await period(10);await activate(grid);assert.equal(await raw(1,1),456,'未设置按月独立的列共享来源资料');
   await period(9);await activate(grid);assert.equal(await raw(1,1),456,'独立表切月数据不混用');
   await evaluate('(async()=>{await autoSaveQc();await saveSettings(true);})()');await restartBackend();await call('Page.reload');
   await waitFor(`document.getElementById('loadingOverlay')?.style.display==='none'`);await ready();await activate(grid);assert.equal(await raw(1,0),'独立数据','独立表重启保存');

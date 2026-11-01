@@ -1,0 +1,55 @@
+const assert=require('node:assert/strict');
+
+module.exports=async({evaluate,call,click,key,mouse,delay,restartBackend})=>{
+  await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+  const wait=async exp=>{for(let n=0;n<100;n++){if(await evaluate(exp))return;await delay(100);}throw new Error('未就绪：'+exp);};
+  const ready=()=>wait(`LmsSpreadsheet.getInstance('qcDeptTablesWrap')?.ready&&!document.querySelector('#qcDeptTablesWrap [data-u-comp="workbench-skeleton-shimmer"]')`);
+  const activate=async id=>{await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.setActiveSheet('${id}')`);await delay(100);};
+  const raw=(r,c)=>evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(${r},${c}).getRawValue()??''`);
+  const set=async(r,c,value)=>evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(${r},${c}).setValue(${JSON.stringify(value)})`);
+  const period=async m=>{await evaluate(`(async()=>{await LmsSpreadsheet.flush('quick-calc');await autoSaveQc();document.getElementById('qcMonth').value='${m}';await initQuickCalc();})()`);await ready();await activate('bank-cards');};
+  await wait(`document.getElementById('loadingOverlay')?.style.display==='none'`);
+  await evaluate(`(async()=>{applySetting('minimalMode',true,true);await navigateTo('quickcalc');})()`);await ready();await activate('bank-cards');
+  const rows=await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getMaxRows()`);
+  await set(2,3,101.11);await period(10);await set(2,3,202.22);await period(9);
+  // 通过真实行号右键菜单插入，验证不是只能通过 API 才能新增。
+  const point=await evaluate(`(()=>{const i=LmsSpreadsheet.getInstance('qcDeptTablesWrap'),r=i.book.getActiveSheet().getRange(2,0).getCellRect(),c=[...i.host.querySelectorAll('canvas')].sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight)[0].getBoundingClientRect();return {x:c.x+15,y:c.y+r.y+r.height/2}})()`);
+  await mouse('mousePressed',point,{button:'right',buttons:2,clickCount:1});await mouse('mouseReleased',point,{button:'right',buttons:0,clickCount:1});
+  await wait(`document.querySelector('.bank-column-menu button')?.textContent==='上方插入行'`);await click('.bank-column-menu button');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getMaxRows()`),rows+1);
+  assert.equal(await raw(3,3),101.11,'原月金额随原行移动');
+  const ids=await evaluate(`Object.values(LmsSpreadsheet.captureGridStates(true)['bank-cards'].rowData).map(r=>r.custom?.lmsRowId)`);
+  assert.equal(new Set(ids).size,rows+1,'新增行有稳定且唯一身份');
+  await set(2,2,'新增测试人员');await set(2,1,'0001234567890123456789');await set(2,3,0);
+  await period(10);
+  assert.equal(await raw(2,2),'新增测试人员','新增行资料自动同步已存在月份');
+  assert.equal(await raw(2,1),'0001234567890123456789','长账号同步保真');
+  assert.equal(await raw(2,3),'','新行的其他月份金额为空');
+  assert.equal(await raw(3,3),202.22,'原金额按行身份保留');
+  await set(2,3,333);await set(2,2,'更名测试人员');await period(9);
+  assert.equal(await raw(2,2),'更名测试人员','共享列可以覆盖更新');assert.equal(await raw(2,3),0,'0值保留且不跨月覆盖');
+  // 插入操作的撤销/重做也须恢复行结构、身份及编辑范围。
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().insertRowsAfter(3,1)`);
+  await key('z',90,2);await ready();await activate('bank-cards');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getMaxRows()`),rows+1,'撤销新增行');
+  await key('y',89,2);await ready();await activate('bank-cards');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getMaxRows()`),rows+2,'重做新增行');
+  await set(4,2,'重做后可编辑');await period(11);
+  assert.equal(await raw(2,2),'更名测试人员','未来月份也采用共享行');assert.equal(await raw(4,2),'重做后可编辑');assert.equal(await raw(2,3),'');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().setRowCount(${rows+4})`);
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getMaxRows()`),rows+4,'底部追加行生效');
+  await set(rows+3,2,'底部追加');
+  assert.ok(await evaluate(`fetch('/api/bank-sheet/export?year=2026&month=11').then(r=>r.ok)`),'新增行可以导出XLS');
+  await period(9);assert.equal(await raw(rows+3,2),'底部追加','底部追加行跨月保存');
+  await click('.lms-add-sheet-tab');await evaluate(`document.getElementById('qcNewSheetType').value='grid';document.getElementById('qcNewSheetType').dispatchEvent(new Event('change'));document.getElementById('qcNewSheetName').value='独立测试';`);await click('#qcCreateSheetBtn');
+  await wait(`_qcGridSheets.length===1`);await ready();const grid=await evaluate(`_qcGridSheets[0].data.id`),sid=await evaluate('_qcGridSheets[0].id');await activate(grid);
+  await evaluate(`post('/api/custom-grid-sheets/blank-columns',{sheet_key:'${grid}',columns:[1]})`);
+  await set(1,0,'固定资料');await set(1,1,100);await evaluate(`(async()=>{await autoSaveQc();await post('/api/custom-grid-sheets/sync',{sheet_id:${sid},source_year:2026,source_month:9,targets:[{year:2026,month:10}]});})()`);
+  await period(10);await activate(grid);assert.equal(await raw(1,0),'固定资料');assert.equal(await raw(1,1),'');await set(1,1,200);
+  await period(9);await activate(grid);await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().insertRowsBefore(1,1)`);await set(1,0,'新行');await set(1,1,99);
+  await period(10);await activate(grid);assert.equal(await raw(1,0),'新行');assert.equal(await raw(1,1),'');assert.equal(await raw(2,1),200);
+  await evaluate('(async()=>{await autoSaveQc();await saveSettings(true);})()');await restartBackend();await call('Page.reload');await wait(`document.getElementById('loadingOverlay')?.style.display==='none'`);await ready();await period(10);await activate(grid);
+  assert.equal(await raw(1,0),'新行');assert.equal(await raw(2,1),200,'重启保留自定义表结构和月度数据');
+  await activate('bank-cards');assert.equal(await raw(2,3),333);assert.equal(await raw(3,3),202.22);
+  console.log('PASS: 真实右键新增行/共享行身份/原有及未来月份同步/金额按月独立/固定列覆盖/0值/撤销重做/自定义表/重启/XLS导出');
+};

@@ -13,7 +13,7 @@ import uuid
 from urllib import parse, request
 
 from services.db import init_database, get_base_dir, get_resource_dir
-from services import crud, bank_sheet
+from services import crud, bank_sheet, independent_sheet
 
 DATA_DIR = get_base_dir()
 RESOURCE_DIR = get_resource_dir()
@@ -428,21 +428,23 @@ async def api_delete_price_template(template_id: int):
 
 @app.post("/api/quick-calc-save")
 async def api_save_quick_calc(payload: dict):
-    bank_cells = payload.get('bank_cells')
-    if bank_cells is not None:
-        try:
-            bank_cells = bank_sheet.validate_cells(bank_cells)
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error))
-    return crud.save_quick_calc(
-        year=payload["year"],
-        month=payload["month"],
-        dept_rows=payload.get("dept_rows", {}),
-        qty_data=payload.get("qty_data", {}),
-        row_meta=payload.get("row_meta", {}),
-        bank_cells=bank_cells,
-        grid_states=payload.get('grid_states',{}),
-    )
+    try:
+        bank_state=payload.get('bank_state')
+        if bank_state is not None:
+            bank_state=independent_sheet.validate(bank_state,bank=True)
+        bank_cells=payload.get('bank_cells')
+        if bank_cells is not None:
+            bank_cells=bank_sheet.validate_cells(bank_cells,(bank_state or {}).get('rowCount'))
+        grids={key:independent_sheet.validate(state) for key,state in payload.get('grid_states',{}).items()}
+        return crud.save_quick_calc(
+            year=payload['year'], month=payload['month'],
+            dept_rows=payload.get('dept_rows',{}), qty_data=payload.get('qty_data',{}),
+            row_meta=payload.get('row_meta',{}), bank_cells=bank_cells,
+            grid_states=grids, bank_state=bank_state,
+        )
+    except (ValueError,TypeError) as error:
+        raise HTTPException(status_code=400,detail=str(error))
+
 
 
 @app.get('/api/quick-calc-sheets')
@@ -464,6 +466,24 @@ async def api_bank_blank_columns(payload: dict):
         return bank_sheet.set_blank_columns(payload.get('columns',[]))
     except (ValueError, TypeError) as error:
         raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post('/api/custom-grid-sheets/blank-columns')
+async def api_grid_blank_columns(payload: dict):
+    from contextlib import closing
+    import json
+    key=payload.get('sheet_key','')
+    columns=payload.get('columns',[])
+    try:
+        sid=int(key.removeprefix('custom-grid-'))
+        with closing(crud.get_connection()) as conn, conn:
+            row=conn.execute('SELECT column_count FROM custom_grid_sheets WHERE id=?',(sid,)).fetchone()
+            if not row or any(type(c) is not int or not 0<=c<row[0] for c in columns):
+                raise ValueError('列编号无效')
+            conn.execute('INSERT OR REPLACE INTO app_settings VALUES (?,?)',(f'{key}_blank_columns',json.dumps(sorted(set(columns)))))
+        return {'ok':True,'columns':sorted(set(columns))}
+    except (ValueError,TypeError) as error:
+        raise HTTPException(status_code=400,detail=str(error))
 
 
 @app.get('/api/bank-sheet/export')

@@ -856,7 +856,15 @@ function updateDeptRowTotals(rowKey) {
 // ---- 自动保存快捷计算状态 ----
 async function autoSaveQc() {
   normalizeQcRows();
-  const gridStates=window.LmsSpreadsheet?.captureGridStates()||{};
+  const gridStates=window.LmsSpreadsheet?.captureGridStates(true)||{};
+  const bankState=gridStates['bank-cards'];
+  delete gridStates['bank-cards'];
+  if(bankState && _qcBankSheet) {
+    _qcBankSheet.data=bankState;
+    _qcState.bankCells={};
+    for(const [r,cols] of Object.entries(bankState.cellData||{})) if(Number(r)>0)
+      for(const [c,cell] of Object.entries(cols)) _qcState.bankCells[`${r},${c}`]=cell.v??'';
+  }
   for (const sheet of _qcGridSheets) if (gridStates[sheet.data.id]) sheet.data=gridStates[sheet.data.id];
   const year = _qcLoadedPeriod?.year ?? parseInt(document.getElementById('qcYear')?.value || _state.currentYear);
   const month = _qcLoadedPeriod?.month ?? parseInt(document.getElementById('qcMonth')?.value || _state.currentMonth);
@@ -865,7 +873,7 @@ async function autoSaveQc() {
     dept_rows: _qcDeptRows,
     qty_data: _qcState.qtyData,
     row_meta: _qcState.rowMeta,
-    ...(_qcBankSheet?.data ? { bank_cells: _qcState.bankCells || {} } : {}),
+    ...(_qcBankSheet?.data ? { bank_cells: _qcState.bankCells || {},bank_state:bankState||_qcBankSheet.data } : {}),
     grid_states: gridStates,
   }));
   const saved = _qcSaveQueue.catch(() => {}).then(() => post('/api/quick-calc-save', payload));

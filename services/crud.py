@@ -4,6 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from contextlib import closing
 
 from services.db import get_connection
+from services import independent_sheet
 
 
 def money(value):
@@ -81,7 +82,11 @@ def get_custom_grid_sheets(year, month):
             'columnCount':row['column_count'],'cellData':{},'defaultRowHeight':30,'defaultColumnWidth':110}
         data.update(json.loads(row['state']))
         data.update(id=f"custom-grid-{row['id']}",name=row['name'])
-        result.append({'id':row['id'],'name':row['name'],'data':data})
+        with closing(get_connection()) as conn:
+            columns=independent_sheet.blank_columns(conn,data['id'])
+            shared=independent_sheet.default_state(conn,data['id'])
+        data=independent_sheet.merge(shared or data,data,columns)
+        result.append({'id':row['id'],'name':row['name'],'data':data,'blank_columns':columns})
     return result
 
 
@@ -1229,7 +1234,7 @@ def delete_data_by_filter(emp_id: int = None, year: int = None, month: int = Non
 
 # ── 快捷计算自动保存 ──────────────────────────────────────
 
-def save_quick_calc(year: int, month: int, dept_rows: dict, qty_data: dict, row_meta: dict = None, bank_cells: dict = None, grid_states: dict = None):
+def save_quick_calc(year: int, month: int, dept_rows: dict, qty_data: dict, row_meta: dict = None, bank_cells: dict = None, grid_states: dict = None, bank_state: dict = None):
     """保存快捷计算大部门分组表格的填写状态（按年月覆盖）"""
     import json
     sheets=get_quick_calc_sheets(year,month)
@@ -1246,30 +1251,28 @@ def save_quick_calc(year: int, month: int, dept_rows: dict, qty_data: dict, row_
     employees = {str(e['id']):e for e in get_employees()}
     qty_data = {key:value for key,value in qty_data.items() if key.split(',')[-1] not in employees or
         (bool(employees[key.split(',')[-1]]['is_temporary']) == (key.split('_')[0] in temporary_ids))}
-    conn = get_connection()
-    conn.execute("""
-        INSERT INTO quick_calc_saves (year, month, dept_rows, qty_data, row_meta)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(year, month) DO UPDATE SET
-            dept_rows = excluded.dept_rows,
-            qty_data = excluded.qty_data,
-            row_meta = excluded.row_meta,
-            updated_at = CURRENT_TIMESTAMP
-    """, (year, month,
-          json.dumps(dept_rows, ensure_ascii=False),
-          json.dumps(qty_data, ensure_ascii=False),
-          json.dumps(row_meta or {}, ensure_ascii=False)))
-    if bank_cells is not None:
-        conn.execute('INSERT OR REPLACE INTO quick_calc_bank_cells(year,month,cells) VALUES (?,?,?)',
-            (year,month,json.dumps(bank_cells,ensure_ascii=False)))
-    for key,state in (grid_states or {}).items():
-        if not key.startswith('custom-grid-'):
-            continue
-        sid=int(key.replace('custom-grid-',''))
-        conn.execute('UPDATE custom_grid_periods SET state=? WHERE sheet_id=? AND year=? AND month=?',
-            (json.dumps(state,ensure_ascii=False),sid,year,month))
-    conn.commit()
-    conn.close()
+    with closing(get_connection()) as conn, conn:
+        conn.execute("""
+            INSERT INTO quick_calc_saves (year, month, dept_rows, qty_data, row_meta)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(year, month) DO UPDATE SET
+                dept_rows = excluded.dept_rows,
+                qty_data = excluded.qty_data,
+                row_meta = excluded.row_meta,
+                updated_at = CURRENT_TIMESTAMP
+        """, (year, month,
+              json.dumps(dept_rows, ensure_ascii=False),
+              json.dumps(qty_data, ensure_ascii=False),
+              json.dumps(row_meta or {}, ensure_ascii=False)))
+        if bank_cells is not None:
+            from services import bank_sheet
+            bank_sheet.save_sheet(conn,year,month,bank_cells,bank_state)
+        for key,state in (grid_states or {}).items():
+            if not key.startswith('custom-grid-'):
+                continue
+            sid=int(key.replace('custom-grid-',''))
+            if conn.execute('SELECT 1 FROM custom_grid_periods WHERE sheet_id=? AND year=? AND month=?',(sid,year,month)).fetchone():
+                independent_sheet.save(conn,key,year,month,independent_sheet.validate(state))
     return {"ok": True}
 
 

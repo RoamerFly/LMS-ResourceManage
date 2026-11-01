@@ -175,3 +175,15 @@ CREATE TABLE IF NOT EXISTS quick_calc_sheet_periods (
     month INTEGER NOT NULL CHECK(month BETWEEN 1 AND 12),
     PRIMARY KEY(sheet_id, year, month)
 );
+
+-- 独立表共享结构/固定数据，月份快照只负责各月独立列。
+CREATE TABLE IF NOT EXISTS independent_sheet_defaults (
+    sheet_key TEXT PRIMARY KEY,
+    state TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS independent_bank_periods (
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    state TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY(year,month)
+);

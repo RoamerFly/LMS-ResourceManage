@@ -11,6 +11,7 @@ import olefile
 import xlrd
 
 from services.db import get_base_dir, get_connection
+from services import independent_sheet
 
 TEMPLATE_NAMES = ('bank-card-template.xls', '工资表模板-9月工资.xls')
 _cache = {}
@@ -108,7 +109,7 @@ def set_blank_columns(columns):
     return {'ok': True, 'columns': cols}
 
 
-def validate_cells(cells):
+def validate_cells(cells, row_count=None):
     if not isinstance(cells, dict):
         raise ValueError('银行卡数据格式无效')
     sheet = _template()['sheet']
@@ -118,8 +119,8 @@ def validate_cells(cells):
             r, c = map(int, key.split(','))
         except (ValueError, AttributeError):
             raise ValueError('银行卡单元格坐标无效')
-        if not 1 <= r < sheet.nrows or not 0 <= c < sheet.ncols:
-            raise ValueError('银行卡表头、行列结构及模板样式不可修改')
+        if not 1 <= r < (row_count or sheet.nrows) or not 0 <= c < sheet.ncols:
+            raise ValueError('银行卡单元格超出已保存的行列范围')
         if value is None:
             value = ''
         if isinstance(value, bool) or not isinstance(value, (str, int, float)):
@@ -138,22 +139,38 @@ def validate_cells(cells):
 
 def load_sheet(year, month):
     template = _template()
-    data = copy.deepcopy(template['data'])
     with closing(get_connection()) as conn, conn:
-        row = conn.execute('SELECT cells FROM quick_calc_bank_cells WHERE year=? AND month=?', (year,month)).fetchone()
-        if row:
-            values = json.loads(row[0])
-        else:
-            clear = blank_columns()
-            values = {f'{r},{c}': '' if c in clear else cell['v']
-                for r,cols in data['cellData'].items() if r > 0 for c,cell in cols.items()}
-            conn.execute('INSERT INTO quick_calc_bank_cells(year,month,cells) VALUES (?,?,?)', (year,month,json.dumps(values,ensure_ascii=False)))
-    for key, value in values.items():
-        r,c = map(int,key.split(','))
-        if r < data['rowCount'] and c < data['columnCount']:
-            data['cellData'][r][c]['v'] = value
-            data['cellData'][r][c]['t'] = 2 if isinstance(value,(int,float)) else 1
+        saved = conn.execute('SELECT state FROM independent_bank_periods WHERE year=? AND month=?', (year,month)).fetchone()
+        monthly = json.loads(saved[0]) if saved else None
+        if monthly is None:
+            legacy = conn.execute('SELECT cells FROM quick_calc_bank_cells WHERE year=? AND month=?', (year,month)).fetchone()
+            if legacy:
+                monthly = independent_sheet.identify(template['data'])
+                for key,value in json.loads(legacy[0]).items():
+                    r,c = key.split(',')
+                    if int(r)<monthly['rowCount']:
+                        monthly['cellData'].setdefault(r,{})[c] = {**monthly['cellData'].get(r,{}).get(c,{}),'v':value,'t':2 if isinstance(value,(int,float)) else 1}
+        shared = independent_sheet.default_state(conn,'bank-cards') or template['data']
+        data = independent_sheet.merge(shared, monthly, independent_sheet.blank_columns(conn,'bank-cards'))
+        conn.execute('INSERT OR REPLACE INTO independent_bank_periods VALUES (?,?,?)', (year,month,json.dumps(data,ensure_ascii=False)))
+        values = {f'{r},{c}':cell.get('v','') for r,cols in data['cellData'].items() if int(r)>0 for c,cell in cols.items()}
+        conn.execute('INSERT OR REPLACE INTO quick_calc_bank_cells VALUES (?,?,?)',(year,month,json.dumps(values,ensure_ascii=False)))
     return {'data':data, 'cells':values, 'template_hash':template['hash'], 'blank_columns':blank_columns()}
+
+
+def save_sheet(conn, year, month, cells, state=None):
+    if state is None:
+        row = conn.execute('SELECT state FROM independent_bank_periods WHERE year=? AND month=?',(year,month)).fetchone()
+        state = json.loads(row[0]) if row else independent_sheet.identify(_template()['data'])
+    state = independent_sheet.validate(state, bank=True)
+    if state['columnCount'] != _template()['sheet'].ncols:
+        raise ValueError('银行卡表保留原模板列结构')
+    cells = validate_cells(cells or {}, state['rowCount'])
+    for key,value in cells.items():
+        r,c = key.split(',')
+        state.setdefault('cellData',{}).setdefault(r,{}).setdefault(c,{}).update(v=value,t=2 if isinstance(value,(int,float)) else 1)
+    independent_sheet.save(conn,'bank-cards',year,month,state)
+    conn.execute('INSERT OR REPLACE INTO quick_calc_bank_cells VALUES (?,?,?)',(year,month,json.dumps(cells,ensure_ascii=False)))
 
 
 def _compound_with_workbook(raw, workbook):
@@ -219,7 +236,13 @@ def _compound_with_workbook(raw, workbook):
 
 
 def export_sheet(year, month):
-    template=_template(); values=load_sheet(year,month)['cells']; sheet=template['sheet']
+    template=_template(); loaded=load_sheet(year,month); values=loaded['cells']; data=loaded['data']; sheet=template['sheet']
+    def source_row(r):
+        custom=data.get('rowData',{}).get(str(r),{}).get('custom',{})
+        identity=custom.get('lmsRowId',f'original-{r}')
+        source=int(identity.removeprefix('original-')) if identity.startswith('original-') else custom.get('templateRow',sheet.nrows-1)
+        return max(0,min(source,sheet.nrows-1))
+    changed_structure=data['rowCount']!=sheet.nrows or any(source_row(r)!=r for r in range(data['rowCount']))
     with olefile.OleFileIO(template['raw']) as ole:
         stream=ole.openstream('Workbook').read()
     records=list(_records(stream)); globals_end=next(i for i,(code,_) in enumerate(records) if code==0x000a)
@@ -234,25 +257,31 @@ def export_sheet(year, month):
         encoded=str(value).encode('utf-16le')
         return _record(0x0204,head+struct.pack('<HB',len(encoded)//2,1)+encoded)
     output=[]
+    original_rows={struct.unpack_from('<H',body)[0]:body for code,body in sheet_records if code==0x0208}
     for code,body in sheet_records:
-        if code in (0x020b,0x00d7):  # INDEX/DBCELL 的缓存偏移由目标程序重建。
+        if code in (0x020b,0x00d7):
+            continue
+        if code==0x0200:  # DIMENSIONS，扩大有效行范围。
+            body=struct.pack('<II',0,data['rowCount'])+body[8:]
+        if code==0x0208 and changed_structure:
             continue
         if code in (0x00bd,0x00be):
-            r,c=struct.unpack_from('<HH',body); last=struct.unpack_from('<H',body,len(body)-2)[0]
-            size=6 if code==0x00bd else 2
-            for col in range(c,last+1):
-                part=body[4+(col-c)*size:4+(col-c+1)*size]; xf=struct.unpack_from('<H',part)[0]; key=f'{r},{col}'
-                output.append(cell_record(r,col,xf,pending.pop(key)) if key in pending else
-                    _record(0x027e if code==0x00bd else 0x0201,struct.pack('<HH',r,col)+part))
-            continue
+            r,c=struct.unpack_from('<HH',body)
+            if r>0:
+                continue
         if code in (0x0203,0x027e,0x00fd,0x0204,0x0201,0x0205,0x0006) and len(body)>=6:
-            r,c,xf=struct.unpack_from('<HHH',body); key=f'{r},{c}'
-            if key in pending:
-                output.append(cell_record(r,c,xf,pending.pop(key))); continue
+            r,c,xf=struct.unpack_from('<HHH',body)
+            if r>0:
+                continue
         if code==0x000a:
-            for key,value in pending.items():
-                r,c=map(int,key.split(',')); output.append(cell_record(r,c,sheet.cell_xf_index(r,c),value))
-            pending.clear()
+            if changed_structure:
+                for r in range(data['rowCount']):
+                    original=original_rows.get(source_row(r))
+                    if original:
+                        output.append(_record(0x0208,struct.pack('<H',r)+original[2:]))
+            for r in range(1,data['rowCount']):
+                for c in range(data['columnCount']):
+                    output.append(cell_record(r,c,sheet.cell_xf_index(source_row(r),c),values.get(f'{r},{c}','')))
         output.append(_record(code,body))
     # 全局格式、字体、SST、PALETTE 等记录未重新生成，唯一工作表起点也保持原值。
     workbook=b''.join(_record(code,body) for code,body in global_records)+b''.join(output)
