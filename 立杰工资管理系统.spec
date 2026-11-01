@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('web', 'web'), ('database', 'database'), ('services', 'services'), ('b.json', '.'), ('api.py', '.'), ('api_server.py', '.')],
+    datas=[('web', 'web'), ('database', 'database'), ('services', 'services'), ('b.json', '.'), ('resources', 'resources'), ('api.py', '.'), ('api_server.py', '.')],
     hiddenimports=['webview', 'webview.platforms.winforms', 'xlrd', 'olefile'],
     hookspath=[],
     hooksconfig={},

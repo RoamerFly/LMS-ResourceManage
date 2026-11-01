@@ -13,7 +13,7 @@ assert test_dir.name.startswith('lms-sheet-native-')
 db.DB_PATH = str(test_dir / 'test-data.db')
 db.get_base_dir = lambda: str(test_dir)
 db.init_database()
-bank_template = Path(__file__).resolve().parents[1] / '工资表模板-9月工资.xls'
+bank_template = Path(__file__).resolve().parents[1] / 'resources/bank-card-template.xls'
 if bank_template.exists():
     shutil.copyfile(bank_template, test_dir / 'bank-card-template.xls')
 with db.get_connection() as conn:

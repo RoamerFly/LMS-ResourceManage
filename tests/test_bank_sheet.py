@@ -14,9 +14,7 @@ import copy
 
 class BankSheetTests(unittest.TestCase):
     def setUp(self):
-        template=Path(__file__).parents[1]/'工资表模板-9月工资.xls'
-        if not template.exists():
-            self.skipTest('此本地模板含银行卡数据，未提交到公共仓库')
+        template=Path(__file__).parents[1]/'resources/bank-card-template.xls'
         self.temp=tempfile.TemporaryDirectory(prefix='lms-bank-test-')
         self.old_db,self.old_base=db.DB_PATH,bank_sheet.get_base_dir
         db.DB_PATH=str(Path(self.temp.name)/'data.db')

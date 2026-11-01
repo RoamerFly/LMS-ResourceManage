@@ -47,6 +47,7 @@ module.exports=async({evaluate,call,click,key,mouse,delay,restartBackend})=>{
   assert.equal(await evaluate(`getComputedStyle(document.getElementById('qcExportBankBtn')).backgroundColor`),'rgb(234, 88, 12)','导出按钮为橙色');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('#view-quickcalc .qc-grand-total')).display`),'none','独立表隐藏部门工资合计');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('#view-quickcalc button[onclick="clearQcPrices()"]')).display`),'none','独立表隐藏部门清空单价操作');
+  await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,2).setValue('测试户名')`);
   const bankStyles=await evaluate(`JSON.stringify(LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,1).getCellStyleData())`);
   await select(1,1);await key('a',65,2);await call('Input.insertText',{text:'0001234567890123456789'});await key('Enter',13);await delay(150);
   assert.equal(await raw(1,1),'0001234567890123456789','银行卡号以文本录入不丢前导零及长整数精度');

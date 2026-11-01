@@ -7,7 +7,9 @@ __pycache__/
 /alipay_browser_profile/
 data.db
 seed_data.py
-b.json
+/b.json
 /node_modules/
 /bank-card-template.xls
 /工资表模板-9月工资.xls
+
+/release-assets/

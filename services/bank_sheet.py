@@ -10,7 +10,7 @@ from pathlib import Path
 import olefile
 import xlrd
 
-from services.db import get_base_dir, get_connection
+from services.db import get_base_dir, get_resource_dir, get_connection
 from services import independent_sheet
 
 TEMPLATE_NAMES = ('bank-card-template.xls', '工资表模板-9月工资.xls')
@@ -22,6 +22,9 @@ def template_path():
         path = Path(get_base_dir()) / name
         if path.is_file():
             return path
+    public_template = Path(get_resource_dir()) / 'resources' / 'bank-card-template.xls'
+    if public_template.is_file():
+        return public_template
     raise ValueError('未找到银行卡 XLS 模板，请将 bank-card-template.xls 放在软件目录')
 
 

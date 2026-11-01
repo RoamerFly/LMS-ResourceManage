@@ -153,6 +153,7 @@ def build(debug=False):
     print(f"[Build] Python: {build_python}")
     prepare_spreadsheet_assets()
 
+    bank_map = 'b.json' if os.path.isfile(os.path.join(PROJECT_DIR, 'b.json')) else 'resources/b.json'
     backup_dir = backup_user_data()
     try:
         # Clean old builds
@@ -168,7 +169,8 @@ def build(debug=False):
             '--add-data', 'web;web',
             '--add-data', 'database;database',
             '--add-data', 'services;services',
-            '--add-data', 'b.json;.',
+            '--add-data', f'{bank_map};.',
+            '--add-data', 'resources;resources',
             '--add-data', 'api.py;.',
             '--add-data', 'api_server.py;.',
             '--hidden-import', 'webview',
