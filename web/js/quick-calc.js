@@ -50,11 +50,11 @@ function showDeleteQcSheetModal(sheetId) {
   const sheet=grid||department;
   if (!sheet) return;
   const {year,month}=_qcLoadedPeriod;
-  openModal(`<div class="modal-title">删除工作表</div>
+  openModal(`<div class="modal-title">删除</div>
     <p>确定删除 <strong>${year}年${month}月 · ${escHtml(sheet.name)}</strong>？</p>
     <p>将删除本月该工作表及填写内容。其他月份继续保留各自的数据。</p>
     <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button>
-    <button id="qcDeleteSheetConfirm" class="btn btn-danger">删除本月工作表</button></div>`);
+    <button id="qcDeleteSheetConfirm" class="btn btn-danger">删除</button></div>`);
   document.getElementById('qcDeleteSheetConfirm').onclick=async event=>{
     const button=event.currentTarget;button.disabled=true;
     const sequence=_qcInitSequence;
@@ -67,7 +67,7 @@ function showDeleteQcSheetModal(sheetId) {
       if (!result.ok) throw new Error(result.detail||result.error||'删除失败');
       if (_qcLoadedPeriod.year!==year || _qcLoadedPeriod.month!==month || sequence!==_qcInitSequence || _currentView!=='quickcalc') {
         if (document.getElementById('qcDeleteSheetConfirm')===button) closeModal();
-        toast(`已删除${year}年${month}月的工作表`,'success');return;
+        toast('已删除','success');return;
       }
       if (grid) _qcGridSheets=_qcGridSheets.filter(s=>s.id!==grid.id);
       else {
@@ -76,7 +76,7 @@ function showDeleteQcSheetModal(sheetId) {
         for (const object of [_qcDeptRows,_qcState.qtyData,_qcState.rowMeta])
           for (const key of Object.keys(object)) if (key.startsWith(prefix)) delete object[key];
       }
-      closeModal();clearHistory();renderQcDeptTables();toast('已删除本月工作表','success');
+      closeModal();clearHistory();renderQcDeptTables();toast('已删除','success');
     } catch(error) {toast(error.message||'删除失败','error');}
     finally {button.disabled=false;}
   };
@@ -301,7 +301,7 @@ function renderQcDeptTables() {
 
   for (const dept of departments) {
     const temporary = isQcTemporarySheet(dept.id);
-    const deptSubs = sortItemsByIds(subDepartments.filter(s => s.dept_id === getQcSheetDeptId(dept.id)), getQcPriceOrder(dept.id), sub => sub.id);
+    const deptSubs = sortItemsByIds(subDepartments.filter(s => s.dept_id === getQcSheetDeptId(dept.id)), getQcPriceOrder(temporary ? getQcSheetDeptId(dept.id) : dept.id), sub => sub.id);
     const deptEmps = employees.filter(e => getQcSheetEmployees(dept.id).some(emp => emp.id === e.id));
 
     if (!deptSubs.length && !deptEmps.length && dept.id > 0) continue;
@@ -370,8 +370,8 @@ function renderQcDeptTables() {
 
         const reference = _qcState.rowMeta[rowKey] || {};
         if (temporary) {
-          html += `<td class="qc-reference-cell" data-sheet-value-text="${escHtml(reference.orderNo || '')}">${escHtml(reference.orderNo || '')}</td>`;
-          html += `<td class="qc-reference-cell">${reference.orderQty ?? ''}</td>`;
+          html += `<td class="qc-reference-cell" style="background:#f5f3ff;color:#5b21b6" data-sheet-value-text="${escHtml(reference.orderNo || '')}">${escHtml(reference.orderNo || '')}</td>`;
+          html += `<td class="qc-reference-cell" style="background:#f5f3ff;color:#5b21b6">${reference.orderQty ?? ''}</td>`;
         } else {
         html += `<td class="qc-reference-cell" style="background:#f5f3ff;color:#5b21b6">
           <input type="text" class="cell-input qc-order-input" data-row-key="${escHtml(rowKey)}"

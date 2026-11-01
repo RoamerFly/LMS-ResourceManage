@@ -80,7 +80,7 @@
     if (cell.td.classList.contains('qc-add-member-cell')) return { ...style, bg: { rgb: '#ffffff' } };
     const total = cell.td.matches('.row-total-display, .qc-done-display');
     return { ...style,
-      bg: { rgb: !used ? '#ffffff' : total ? '#fef9c3' : cell.isPrice ? '#f0fdf4' : cell.input?.dataset.refField ? '#f5f3ff' : '#eff6ff' },
+      bg: { rgb: !used ? '#ffffff' : total ? '#fef9c3' : cell.isPrice ? '#f0fdf4' : cell.td.classList.contains('qc-reference-cell') ? '#f5f3ff' : '#eff6ff' },
       cl: { rgb: !used ? '#64748b' : total ? '#92400e' : cell.baseStyle.cl.rgb },
       ...(total ? { bl: used ? 1 : 0 } : {}),
     };
@@ -217,6 +217,42 @@
       columnTemplates:new Map(),columnKeys:{},legacyColumnKeys:{},fingerprint:`${data.id}:${data.rowCount}:${data.columnCount}:${hash}` };
   }
 
+  // 人员名称不同，但同一小部门的列采用主表对应人员列的样式。
+  // 单价列按业务 ID 匹配，避免拖动列后取错字体、格式或列宽。
+  function mainStyleColumn(meta, main, column) {
+    if (column<3) return column;
+    const header=meta.cells.get(`${meta.headerRows-1},${column}`)?.td;
+    const headers=[...main.cells.values()].filter(c=>c.row===main.headerRows-1);
+    if (header?.dataset.priceId) return headers.find(c=>c.td.dataset.priceId===header.dataset.priceId)?.col;
+    if (header?.dataset.empId) {
+      const emp=_qcState.employees.find(e=>e.id===Number(header.dataset.empId));
+      const people=headers.filter(c=>c.td.dataset.empId);
+      return (people.find(c=>_qcState.employees.find(e=>e.id===Number(c.td.dataset.empId))?.sub_dept_id===emp?.sub_dept_id)||people[0])?.col;
+    }
+    return headers.find(c=>c.td.dataset.addMember!==undefined)?.col;
+  }
+
+  function inheritTemporaryStyles(sheets) {
+    for (const meta of sheets) {
+      if (meta.kind || !isQcTemporarySheet(meta.id.replace('dept-',''))) continue;
+      const main=sheets.find(s=>s.id===`dept-${getQcSheetDeptId(meta.id.replace('dept-',''))}`);
+      if (!main) continue;
+      for (const field of ['defaultRowHeight','defaultColumnWidth','rowHeader','columnHeader','zoomRatio','rowData'])
+        if (main.data[field]!==undefined) meta.data[field]=JSON.parse(JSON.stringify(main.data[field]));
+      for (const cell of meta.cells.values()) {
+        const col=mainStyleColumn(meta,main,cell.col);
+        if (col===undefined) continue;
+        const source=main.data.cellData[cell.row]?.[col] || main.data.cellData[main.headerRows]?.[col];
+        if (source?.s) {
+          const style=JSON.parse(JSON.stringify(source.s));
+          meta.data.cellData[cell.row][cell.col].s=style;
+          cell.baseStyle=JSON.parse(JSON.stringify(style));
+        }
+        if (main.data.columnData?.[col]) meta.data.columnData[cell.col]=JSON.parse(JSON.stringify(main.data.columnData[col]));
+      }
+    }
+  }
+
   function captureGridStates() {
     const instance=[...instances.values()].find(i=>i.type==='quick-calc');
     if (!instance) return {};
@@ -251,7 +287,8 @@
         const removable=_qcCustomSheets.some(s=>`dept-${s.id}`===id)||_qcGridSheets.some(s=>s.data.id===id);
         menu=document.createElement('div');menu.className='bank-column-menu sheet-tab-menu';
         const button=document.createElement('button');button.type='button';button.disabled=!removable;
-        button.textContent=removable?'删除本月工作表':'固定工作表，不能删除';
+        button.textContent='删除';
+        if (!removable) button.title='固定工作表不能删除';
         button.onclick=()=>{close();showDeleteQcSheetModal(id);};
         menu.append(button);document.body.append(menu);
         menu.style.left=`${Math.min(event.clientX,innerWidth-menu.offsetWidth-8)}px`;
@@ -784,8 +821,10 @@
       }
       sheet.data.rowData = Object.fromEntries([...sheet.rows].filter(([, tr]) => layout.rows?.[tr.dataset.rowKey])
         .map(([r, tr]) => [r, layout.rows[tr.dataset.rowKey]]));
+      for (const [row,value] of Object.entries(layout.headers||{})) if (Number(row)<sheet.headerRows) sheet.data.rowData[row]=value;
       if (layout.zoomRatio) sheet.data.zoomRatio = layout.zoomRatio;
     }
+    if (type==='quick-calc') inheritTemporaryStyles(sheets);
     const source = document.createElement('div');
     source.className = 'lms-sheet-source';
     while (wrap.firstChild) source.appendChild(wrap.firstChild);
@@ -858,6 +897,7 @@
           if (resolved) cellStyles[cell.layoutKey] = resolved;
         }
         layouts[meta.id] = { cellStyles, fontSizes: { ...instance.fontSizes }, zoomRatio: sheet.zoomRatio,
+          headers: Object.fromEntries(Array.from({length:meta.headerRows},(_,r)=>[r,sheet.rowData?.[r]])),
           columns: Object.fromEntries(Object.entries(meta.columnKeys).map(([c, key]) => [key, sheet.columnData?.[c]])),
           rows: Object.fromEntries([...meta.rows].map(([r, tr]) => [tr.dataset.rowKey, sheet.rowData?.[r]])) };
       }
@@ -962,11 +1002,21 @@
       for (const meta of instance.sheets.values()) {
         if (meta.kind || !isQcTemporarySheet(meta.id.replace('dept-',''))) continue;
         const id=meta.id.replace('dept-',''), used=getQcUsedRowCount(getQcSheetDeptId(id));
+        const main=instance.sheets.get(`dept-${getQcSheetDeptId(id)}`);
+        if (!main) continue;
+        const sourceSheet=book.getSheetBySheetId(main.id), targetSheet=book.getSheetBySheetId(meta.id);
         ensureQcCapacity(meta,used+meta.headerRows+1);
         for (let r=meta.headerRows;r<meta.headerRows+used;r++) getCell(meta,r,0);
         const patches={}, emps=getQcSheetEmployees(id);
         for (const cell of meta.cells.values()) {
-          if (cell.row<meta.headerRows) continue;
+          const mainCol=mainStyleColumn(meta,main,cell.col);
+          const sourceStyle=mainCol===undefined ? cell.baseStyle : sourceSheet.getRange(cell.row,mainCol).getCellStyleData();
+          const style=JSON.parse(JSON.stringify(sourceStyle||cell.baseStyle));
+          cell.baseStyle=JSON.parse(JSON.stringify(style));
+          if (cell.row<meta.headerRows) {
+            (patches[cell.row]||={})[cell.col]={s:style};
+            continue;
+          }
           const key=`${id}_${cell.row-meta.headerRows}`, row=_qcDeptRows[key]||{}, ref=_qcState.rowMeta[key]||{};
           const header=meta.cells.get(`${meta.headerRows-1},${cell.col}`)?.td;
           let value='';
@@ -981,14 +1031,36 @@
             if (_qcState.qcViewMode==='wage' && hasQcValue(qty)) value=wageAmount(qty,row[emp?.sub_dept_id]||0);
           }
           if (cell.input) cell.input.value=String(value);
-          const inUse=cell.row<meta.headerRows+used;
-          (patches[cell.row]||={})[cell.col]={v:value===''?null:value,p:null,f:null,t:typeof value==='number'?2:1,s:qcRowStyle(cell,inUse)};
+          (patches[cell.row]||={})[cell.col]={v:value===''?null:value,p:null,f:null,t:typeof value==='number'?2:1,s:style};
         }
         instance.syncing=true;
-        try {api.syncExecuteCommand('sheet.mutation.set-range-values',{unitId:book.getId(),subUnitId:meta.id,cellValue:patches});}
+        try {
+          api.syncExecuteCommand('sheet.mutation.set-range-values',{unitId:book.getId(),subUnitId:meta.id,cellValue:patches});
+          for (let col=0;col<meta.columnCount;col++) {
+            const sourceCol=mainStyleColumn(meta,main,col);
+            if (sourceCol!==undefined && targetSheet.getColumnWidth(col)!==sourceSheet.getColumnWidth(sourceCol))
+              targetSheet.setColumnWidth(col,sourceSheet.getColumnWidth(sourceCol));
+          }
+          const sourceData=book.save().sheets[main.id];
+          const rows=new Set([0,...meta.rows.keys(),...Object.keys(sourceData.rowData||{}).map(Number)]);
+          for (const row of rows) if (row<meta.data.rowCount && targetSheet.getRowHeight(row)!==sourceSheet.getRowHeight(row))
+            targetSheet.setRowHeightsForced(row,1,sourceSheet.getRowHeight(row));
+          if (targetSheet.getZoom()!==sourceSheet.getZoom()) targetSheet.zoom(sourceSheet.getZoom());
+        }
         finally {instance.syncing=false;}
       }
     };
+    let temporaryStyleFrame=null;
+    listen(api.Event.CommandExecuted,event=>{
+      if (instance.syncing || type!=='quick-calc' || (!/^sheet\.mutation\./.test(event.id) && event.id!=='sheet.operation.set-zoom-ratio')) return;
+      const id=event.params?.subUnitId||event.params?.sheetId||book.getActiveSheet().getSheetId();
+      if (instance.sheets.get(id)?.kind || temporaryStyleFrame!==null) return;
+      temporaryStyleFrame=requestAnimationFrame(()=>{
+        temporaryStyleFrame=null;
+        if (instances.get(wrap)===instance) syncTemporarySheets();
+      });
+    });
+    instance.disposables.push({dispose(){cancelAnimationFrame(temporaryStyleFrame);}});
     let columnOrderBusy = false;
     const swapBusinessColumns = async (meta, source, target) => {
       if (columnOrderBusy || instances.get(wrap) !== instance || !canSwapColumns(source, target)) return;
@@ -1005,7 +1077,7 @@
           .map(cell => Number(cell.td.dataset[identity]));
         const sync = priceColumn ? null : await setMemberOrderSync(page, false);
         const nextOrder = swapIds(ids, Number(source.td.dataset[identity]), Number(target.td.dataset[identity]));
-        const order = priceColumn ? await setQcPriceOrder(Number(source.td.dataset.deptId), nextOrder) :
+        const order = priceColumn ? await setQcPriceOrder(getQcSheetDeptId(Number(source.td.dataset.deptId)), nextOrder) :
           await setManualEmployeeOrder(page, Number(source.td.dataset.deptId), nextOrder);
         if (sync?.ok === false || order?.ok === false) throw new Error('列顺序保存失败');
         const syncInput = document.querySelector(`#memberOrderSync_${page} input`);
@@ -1357,6 +1429,7 @@
     if (inputCell) book.getActiveSheet().setActiveRange(book.getActiveSheet().getRange(inputCell.row, inputCell.col));
     updateActions();
     instance.ready = true;
+    if (type==='quick-calc') syncTemporarySheets();
     attachCellSearch(instance);
     attachIndependentControls(instance);
   }

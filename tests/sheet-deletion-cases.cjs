@@ -9,7 +9,10 @@ module.exports=async({evaluate,call,click,mouse,delay,restartBackend})=>{
     await waitFor(`document.querySelector('.sheet-tab-menu button')`);
   };
   const remove=async id=>{
-    await rightTab(id);await click('.sheet-tab-menu button');await waitFor(`document.getElementById('qcDeleteSheetConfirm')`);
+    await rightTab(id);
+    assert.equal(await evaluate(`document.querySelector('.sheet-tab-menu button').textContent`),'删除','右键菜单文案简化');
+    await click('.sheet-tab-menu button');await waitFor(`document.getElementById('qcDeleteSheetConfirm')`);
+    assert.equal(await evaluate(`document.getElementById('qcDeleteSheetConfirm').textContent`),'删除','确认按钮文案简化');
     assert.ok(await evaluate(`document.getElementById('modalBox').textContent.includes('其他月份')`),'删除确认提示月份范围');
     await click('#qcDeleteSheetConfirm');await waitFor(`!document.getElementById('modalOverlay').classList.contains('show')`);await ready();
   };
