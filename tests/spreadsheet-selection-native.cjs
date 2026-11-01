@@ -21,9 +21,10 @@ async function main() {
   const qcSheetsTest = process.argv.includes('--qc-sheets');
   const tempsBankTest = process.argv.includes('--temps-bank');
   const sheetDeleteTest = process.argv.includes('--sheet-delete');
+  const independentPasteTest = process.argv.includes('--independent-paste');
   const independentRowsTest = process.argv.includes('--independent-rows');
   const tempStyleTest = process.argv.includes('--temp-style');
-  const liveTest = process.argv.includes('--live') || managementTest || fontTest || spotlightTest || deletionTest || searchTest || qcSheetsTest || tempsBankTest || sheetDeleteTest || tempStyleTest || independentRowsTest;
+  const liveTest = process.argv.includes('--live') || managementTest || fontTest || spotlightTest || deletionTest || searchTest || qcSheetsTest || tempsBankTest || sheetDeleteTest || tempStyleTest || independentRowsTest || independentPasteTest;
   let url = pathToFileURL(path.join(__dirname, engineTest ? 'spreadsheet-engine.html' : 'spreadsheet-selection.html')).href + '?manual=1';
   let browser, backend, stopBackend;
   let launchError;
@@ -134,7 +135,7 @@ async function main() {
         await stopBackend();
         await startBackend(apiPort);
       };
-      await require(independentRowsTest ? './independent-row-cases.cjs' : tempStyleTest ? './temporary-style-cases.cjs' : sheetDeleteTest ? './sheet-deletion-cases.cjs' : tempsBankTest ? './temps-bank-cases.cjs' : qcSheetsTest ? './qc-sheets-money-cases.cjs' : searchTest ? './cell-search-cases.cjs' : deletionTest ? './selection-deletion-cases.cjs' : spotlightTest ? './spotlight-cases.cjs' : fontTest ? './font-settings-cases.cjs' : managementTest ? './management-mode-cases.cjs' : './spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
+      await require(independentPasteTest ? './independent-paste-cases.cjs' : independentRowsTest ? './independent-row-cases.cjs' : tempStyleTest ? './temporary-style-cases.cjs' : sheetDeleteTest ? './sheet-deletion-cases.cjs' : tempsBankTest ? './temps-bank-cases.cjs' : qcSheetsTest ? './qc-sheets-money-cases.cjs' : searchTest ? './cell-search-cases.cjs' : deletionTest ? './selection-deletion-cases.cjs' : spotlightTest ? './spotlight-cases.cjs' : fontTest ? './font-settings-cases.cjs' : managementTest ? './management-mode-cases.cjs' : './spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
       return;
     }
     if (engineTest) {

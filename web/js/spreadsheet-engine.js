@@ -965,19 +965,45 @@
       meta.data.rowCount = Math.ceil((requiredRows + 100) / 100) * 100;
       book.getSheetBySheetId(meta.id).setRowCount(meta.data.rowCount);
     };
+    const ensureIndependentCapacity = (meta, requiredRows) => {
+      if (requiredRows > 5000) { notify('独立表最多支持5000行，请减少粘贴范围'); return false; }
+      if (requiredRows <= meta.data.rowCount) return true;
+      book.getSheetBySheetId(meta.id).insertRowsAfter(meta.data.rowCount-1,requiredRows-meta.data.rowCount);
+      return meta.data.rowCount >= requiredRows;
+    };
+    const finishIndependentPaste = () => {
+      clearTimeout(instance.independentPasteTimer);
+      instance.independentPaste = false;
+    };
     listen(api.Event.BeforeClipboardPaste, event => {
       if (type !== 'quick-calc' || event.workbook.getId() !== book.getId()) return;
       const meta = instance.sheets.get(event.worksheet.getSheetId());
-      if (meta?.kind) return;
       const selection = event.worksheet.getSelection()?.getActiveRange()?.getRange();
-      if (!meta || !selection || selection.startRow < meta.headerRows) return;
+      if (!meta || !selection || (!meta.kind && selection.startRow < meta.headerRows)) return;
       const table = event.html ? new DOMParser().parseFromString(event.html, 'text/html').querySelector('table') : null;
-      const rows = table?.rows.length || String(event.text || '').replace(/[\r\n]+$/, '').split(/\r\n|\r|\n/).length;
+      const rows = table?.rows.length ? [...table.rows].reduce((count,row,index)=>
+        Math.max(count,index+1,...[...row.cells].map(cell=>index+(cell.rowSpan||1))),table.rows.length) :
+        String(event.text || '').replace(/[\r\n]+$/, '').split(/\r\n|\r|\n/).length;
+      const requiredRows=selection.startRow+rows;
+      if (meta.kind) {
+        if (requiredRows>5000) { event.cancel=true;notify('独立表最多支持5000行，请减少粘贴范围');return; }
+        if (requiredRows>meta.data.rowCount) {
+          // 扩展结构及随后异步粘贴的值属于同一次用户操作。
+          recordHistory();instance.independentPaste=true;
+          instance.independentPasteTimer=setTimeout(finishIndependentPaste,15000);
+          if(!ensureIndependentCapacity(meta,requiredRows)){finishIndependentPaste();event.cancel=true;}
+        }
+        return;
+      }
       // 引擎在写值前尝试插入超出容量的行，提前扩展空白容量即可避免结构操作被拦截。
-      ensureQcCapacity(meta, selection.startRow + rows);
+      ensureQcCapacity(meta, requiredRows);
     });
+    listen(api.Event.ClipboardPasted,event=>{
+      if(event.workbook.getId()===book.getId())finishIndependentPaste();
+    });
+    instance.disposables.push({dispose:finishIndependentPaste});
     const recordHistory = () => {
-      if (instance.historyPending) return;
+      if (instance.historyPending || instance.independentPaste) return;
       instance.historyPending = true;
       pushHistory(type);
       queueMicrotask(() => { instance.historyPending = false; });
@@ -1230,6 +1256,12 @@
         const meta = instance.sheets.get(event.params?.subUnitId);
         if (!meta) { event.cancel = true; return; }
         if (meta.kind) {
+          const requiredRows=Object.keys(event.params.cellValue||{}).reduce((count,row)=>
+            Number.isSafeInteger(Number(row)) && Number(row)>=0?Math.max(count,Number(row)+1):count,meta.data.rowCount);
+          if(requiredRows>meta.data.rowCount) {
+            recordHistory();
+            if(!ensureIndependentCapacity(meta,requiredRows)){event.cancel=true;return;}
+          }
           let writes=false;
           for (const [r,cols] of Object.entries(event.params.cellValue||{})) for (const [c,patch] of Object.entries(cols||{})) {
             const cell=meta.cells.get(`${r},${c}`);
