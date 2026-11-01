@@ -7,10 +7,27 @@ function escHtml(s) {
 }
 
 function roundNumber(n, digits = 2) {
-  const value = Number(n) || 0;
-  const factor = 10 ** digits;
-  return Math.round((value + Number.EPSILON) * factor) / factor;
+  return Number(decimalScaledProduct(n, 1, digits)) / 10 ** digits;
 }
+
+// 从十进制文本拆分整数与小数位，乘法和四舍五入均不经过二进制小数。
+function decimalParts(value) {
+  const match = String(value ?? 0).trim().match(/^([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i);
+  if (!match || !(match[2] || match[3])) return { integer: 0n, scale: 0 };
+  return { integer: BigInt((match[1] === '-' ? '-' : '') + ((match[2] || '') + (match[3] || '') || '0')),
+    scale: (match[3] || '').length - Number(match[4] || 0) };
+}
+
+function decimalScaledProduct(a, b, digits = 2) {
+  const left = decimalParts(a), right = decimalParts(b);
+  const product = left.integer * right.integer, shift = left.scale + right.scale - digits;
+  if (shift <= 0) return product * 10n ** BigInt(-shift);
+  const divisor = 10n ** BigInt(shift), sign = product < 0n ? -1n : 1n;
+  return sign * ((product * sign + divisor / 2n) / divisor);
+}
+
+function wageCents(quantity, price) { return decimalScaledProduct(quantity, price, 2); }
+function wageAmount(quantity, price) { return Number(wageCents(quantity, price)) / 100; }
 
 function toast(msg, type = 'info') {
   const c = document.getElementById('toastContainer');

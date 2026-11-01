@@ -139,3 +139,16 @@ INSERT OR IGNORE INTO sub_departments (id, dept_id, name) VALUES (1, 1, '衣车'
 INSERT OR IGNORE INTO sub_departments (id, dept_id, name) VALUES (2, 1, '折面');
 INSERT OR IGNORE INTO sub_departments (id, dept_id, name) VALUES (3, 1, '折边');
 INSERT OR IGNORE INTO sub_departments (id, dept_id, name) VALUES (4, 2, '底部');
+
+-- 自定义工作表仅复用部门人员/单价列；工作表与月份的关联不携带录入数据。
+CREATE TABLE IF NOT EXISTS quick_calc_sheets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    dept_id INTEGER NOT NULL REFERENCES departments(id)
+);
+CREATE TABLE IF NOT EXISTS quick_calc_sheet_periods (
+    sheet_id INTEGER NOT NULL REFERENCES quick_calc_sheets(id),
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL CHECK(month BETWEEN 1 AND 12),
+    PRIMARY KEY(sheet_id, year, month)
+);

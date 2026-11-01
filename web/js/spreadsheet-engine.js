@@ -115,7 +115,9 @@
             l: { s: 1, cl: { rgb: '#e2e8f0' } }, r: { s: 1, cl: { rgb: '#e2e8f0' } } },
         };
         if (input && Number(input.value) > 0) style.bg = { rgb: contentCss.backgroundColor };
-        if (input?.classList.contains('qc-price-input') || td.querySelector('.wage-cell-display, .qc-price-display') || (total && table.classList.contains('wage-view'))) {
+        if (input?.classList.contains('qc-price-input') || td.querySelector('.qc-price-display')) {
+          style.n = { pattern: '#,##0.00###############' };
+        } else if (td.querySelector('.wage-cell-display') || (total && table.classList.contains('wage-view'))) {
           style.n = { pattern: '#,##0.00' };
         } else if (input?.dataset.refField === 'orderNo') style.n = { pattern: '@' };
         else if (input || typeof textValue(td) === 'number') style.n = { pattern: '0' };
@@ -672,7 +674,8 @@
         if (savedStyle) {
           const group = cell.row < sheet.headerRows ? 'header' : 'body';
           sheet.data.cellData[cell.row][cell.col].s = { ...savedStyle,
-            ...((layout.fontSizes?.[group] ?? 13) !== fontSizes[group] ? { fs: fontSizes[group] } : {}) };
+            ...((layout.fontSizes?.[group] ?? 13) !== fontSizes[group] ? { fs: fontSizes[group] } : {}),
+            ...(cell.isPrice && savedStyle.n?.pattern === '#,##0.00' ? { n: cell.baseStyle.n } : {}) };
         }
         if (type === 'quick-calc' && cell.row >= sheet.headerRows) {
           sheet.data.cellData[cell.row][cell.col].s = qcRowStyle(cell, cell.td.closest('tr').dataset.qcUsed === 'true', sheet.data.cellData[cell.row][cell.col].s);
@@ -780,6 +783,19 @@
     };
     listen(api.Event.Scroll, extendColumns);
     listen(api.Event.SelectionChanged, extendColumns);
+    // 复用引擎重建月份/工作表后，原生 Scroll 事件可能仍引用旧工作簿；
+    // 从当前工作簿的滚动命令补充检查，确保右侧空白列始终可以继续扩展。
+    let extendFrame = null;
+    listen(api.Event.CommandExecuted, event => {
+      if (!['sheet.command.scroll-view', 'sheet.operation.set-scroll', 'sheet.operation.set-selections'].includes(event.id) || extendFrame !== null) return;
+      extendFrame = requestAnimationFrame(() => {
+        extendFrame = null;
+        if (instances.get(wrap) !== instance) return;
+        const worksheet = book.getActiveSheet();
+        extendColumns({ workbook: book, worksheet, selections: worksheet.getSelection()?.getActiveRangeList().map(range => range.getRange()) });
+      });
+    });
+    instance.disposables.push({ dispose() { cancelAnimationFrame(extendFrame); } });
     const ensureQcCapacity = (meta, requiredRows) => {
       if (requiredRows <= meta.data.rowCount) return;
       meta.data.rowCount = Math.ceil((requiredRows + 100) / 100) * 100;
@@ -905,7 +921,7 @@
         event.cancel = true;
         // 空表头只通过双击新增；键入和F2仍维持只读。
         if (event.eventType === 3) void showAddMemberModal({
-          deptId: type === 'quick-calc' ? Number(meta.id.replace('dept-', '')) : null
+          deptId: type === 'quick-calc' ? getQcSheetDeptId(Number(meta.id.replace('dept-', ''))) : null
         }); // Dblclick
         return;
       }

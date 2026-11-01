@@ -18,7 +18,8 @@ async function main() {
   const spotlightTest = process.argv.includes('--spotlight');
   const deletionTest = process.argv.includes('--deletion');
   const searchTest = process.argv.includes('--search');
-  const liveTest = process.argv.includes('--live') || managementTest || fontTest || spotlightTest || deletionTest || searchTest;
+  const qcSheetsTest = process.argv.includes('--qc-sheets');
+  const liveTest = process.argv.includes('--live') || managementTest || fontTest || spotlightTest || deletionTest || searchTest || qcSheetsTest;
   let url = pathToFileURL(path.join(__dirname, engineTest ? 'spreadsheet-engine.html' : 'spreadsheet-selection.html')).href + '?manual=1';
   let browser, backend, stopBackend;
   let launchError;
@@ -129,7 +130,7 @@ async function main() {
         await stopBackend();
         await startBackend(apiPort);
       };
-      await require(searchTest ? './cell-search-cases.cjs' : deletionTest ? './selection-deletion-cases.cjs' : spotlightTest ? './spotlight-cases.cjs' : fontTest ? './font-settings-cases.cjs' : managementTest ? './management-mode-cases.cjs' : './spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
+      await require(qcSheetsTest ? './qc-sheets-money-cases.cjs' : searchTest ? './cell-search-cases.cjs' : deletionTest ? './selection-deletion-cases.cjs' : spotlightTest ? './spotlight-cases.cjs' : fontTest ? './font-settings-cases.cjs' : managementTest ? './management-mode-cases.cjs' : './spreadsheet-persistence-cases.cjs')({evaluate,call,click,key,mouse,delay,restartBackend});
       return;
     }
     if (engineTest) {

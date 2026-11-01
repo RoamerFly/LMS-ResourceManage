@@ -6,6 +6,66 @@ let qcColumnDraggingEmpId = 0;
 let qcColumnDraggingDeptId = 0;
 let _qcLoadedPeriod = null;
 let _qcSaveQueue = Promise.resolve();
+let _qcCustomSheets = [];
+
+function getQcSheets() { return [..._qcState.departments, ..._qcCustomSheets]; }
+function getQcSheetDeptId(sheetId) {
+  return _qcCustomSheets.find(sheet => sheet.id === Number(sheetId))?.dept_id ?? Number(sheetId);
+}
+
+async function showAddQcSheetModal() {
+  await window.LmsSpreadsheet?.flush('quick-calc');
+  if (!_qcState.departments.length) return toast('请先添加部门与人员', 'error');
+  openModal(`<div class="modal-header"><h3>新增工作表</h3></div>
+    <div class="form-group"><label>工作表名称</label><input id="qcNewSheetName" class="form-control" maxlength="40" placeholder="例如：补单、外发加工"></div>
+    <div class="form-group"><label>所属部门</label><select id="qcNewSheetDept" class="form-control">${_qcState.departments.map(d => `<option value="${d.id}">${escHtml(d.name)}</option>`).join('')}</select></div>
+    <p class="text-muted">复用所选部门的人员与单价列，当前月份从空白开始。该表工资计入所属部门和人员的月工资。</p>
+    <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button id="qcCreateSheetBtn" class="btn btn-primary" onclick="createQcSheet()">新增</button></div>`);
+  document.getElementById('qcNewSheetName').focus();
+}
+
+async function createQcSheet() {
+  const name = document.getElementById('qcNewSheetName').value.trim();
+  if (!name) return toast('请输入工作表名称', 'error');
+  const button = document.getElementById('qcCreateSheetBtn'); button.disabled = true;
+  try {
+    await autoSaveQc();
+    const result = await post('/api/quick-calc-sheets', { ..._qcLoadedPeriod, name, dept_id: Number(document.getElementById('qcNewSheetDept').value) });
+    if (!result.ok) throw new Error(result.detail || result.error || '新增失败');
+    _qcCustomSheets.push(result.sheet);
+    closeModal(); renderQcDeptTables(); clearHistory();
+    window.LmsSpreadsheet?.getInstance('qcDeptTablesWrap')?.book.setActiveSheet(`dept-${result.sheet.id}`);
+    toast('工作表已新增', 'success');
+  } catch (error) { toast(error.message || '新增失败', 'error'); }
+  finally { button.disabled = false; }
+}
+
+async function showSyncQcSheetModal() {
+  await window.LmsSpreadsheet?.flush('quick-calc');
+  if (!_qcCustomSheets.length) return toast('请先新增自定义工作表', 'info');
+  const active = window.LmsSpreadsheet?.getInstance('qcDeptTablesWrap')?.book.getActiveSheet().getSheetId();
+  const { year, month } = _qcLoadedPeriod;
+  openModal(`<div class="modal-header"><h3>同步工作表到其他日期</h3></div>
+    <div class="form-group"><label>工作表</label><select id="qcSyncSheet" class="form-control">${_qcCustomSheets.map(s => `<option value="${s.id}" ${active === `dept-${s.id}` ? 'selected' : ''}>${escHtml(s.name)}</option>`).join('')}</select></div>
+    <div class="form-group"><label>目标年份</label><input id="qcSyncYear" class="form-control" type="number" min="2000" max="2200" value="${year}"></div>
+    <div class="qc-sync-months">${Array.from({ length: 12 }, (_, i) => `<label><input type="checkbox" name="qcSyncMonth" value="${i + 1}" ${i + 1 === (month === 12 ? 1 : month + 1) ? 'checked' : ''}> ${i + 1}月</label>`).join('')}</div>
+    <p class="text-muted">只同步工作表名称、所属部门与列结构，不复制订单、单价或对数。目标日期已有的录入数据保持原样；各月份独立保存。</p>
+    <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button id="qcSyncSheetBtn" class="btn btn-primary" onclick="syncQcSheet()">同步</button></div>`);
+  if (month === 12) document.getElementById('qcSyncYear').value = year + 1;
+}
+
+async function syncQcSheet() {
+  const targets = [...document.querySelectorAll('input[name="qcSyncMonth"]:checked')].map(input => ({ year: Number(document.getElementById('qcSyncYear').value), month: Number(input.value) }));
+  if (!targets.length) return toast('请选择目标月份', 'error');
+  const button = document.getElementById('qcSyncSheetBtn'); button.disabled = true;
+  try {
+    await autoSaveQc();
+    const result = await post('/api/quick-calc-sheets/sync', { sheet_id: Number(document.getElementById('qcSyncSheet').value), source_year: _qcLoadedPeriod.year, source_month: _qcLoadedPeriod.month, targets });
+    if (!result.ok) throw new Error(result.detail || result.error || '同步失败');
+    closeModal(); toast(`已同步到 ${result.added} 个新日期，已有日期保持不变`, 'success');
+  } catch (error) { toast(error.message || '同步失败', 'error'); }
+  finally { button.disabled = false; }
+}
 
 // 显式录入的 0 是有效值，只有 null、undefined 或空白文本表示未填写。
 function hasQcValue(value) {
@@ -95,6 +155,9 @@ async function initQuickCalc() {
   const month = parseInt(document.getElementById('qcMonth')?.value || _state.currentMonth);
   const saved = await get(`/api/quick-calc-save?year=${year}&month=${month}`);
   _qcLoadedPeriod = { year, month };
+  _qcCustomSheets = await get(`/api/quick-calc-sheets?year=${year}&month=${month}`) || [];
+  if (!Array.isArray(_qcCustomSheets)) _qcCustomSheets = [];
+  await ensureQcPriceOrderPrefsLoaded(_qcCustomSheets.map(sheet => sheet.id));
   _qcState.rowMeta = { ...(saved?.row_meta || {}) };
 
   if (saved && saved.dept_rows && Object.keys(saved.dept_rows).length > 0) {
@@ -106,7 +169,7 @@ async function initQuickCalc() {
     _qcState.qtyData = {};
   }
   normalizeQcRows();
-  _qcState.departments.forEach(dept => compactQcRows(dept.id));
+  getQcSheets().forEach(dept => compactQcRows(dept.id));
 
   // 重置工资视角按钮
   const btn = document.getElementById('qcViewModeBtn');
@@ -134,9 +197,9 @@ function renderQcDeptTables() {
   if (!wrap) return;
   window.LmsSpreadsheet?.dispose(wrap);
   normalizeQcRows();
-  _qcState.departments.forEach(dept => compactQcRows(dept.id));
+  getQcSheets().forEach(dept => compactQcRows(dept.id));
 
-  const { departments, subDepartments } = _qcState;
+  const departments = getQcSheets(), { subDepartments } = _qcState;
   const employees = orderEmployeesByDisplayPreference('quickcalc', _qcState.employees);
   const isWage = _qcState.qcViewMode === 'wage';
 
@@ -147,13 +210,13 @@ function renderQcDeptTables() {
   }
 
   let html = '';
-  let grandTotal = 0;
+  let grandTotal = 0n;
 
   for (const dept of departments) {
-    const deptSubs = sortItemsByIds(subDepartments.filter(s => s.dept_id === dept.id), getQcPriceOrder(dept.id), sub => sub.id);
-    const deptEmps = employees.filter(e => e.dept_id === dept.id);
+    const deptSubs = sortItemsByIds(subDepartments.filter(s => s.dept_id === getQcSheetDeptId(dept.id)), getQcPriceOrder(dept.id), sub => sub.id);
+    const deptEmps = employees.filter(e => e.dept_id === getQcSheetDeptId(dept.id));
 
-    if (!deptSubs.length && !deptEmps.length) continue;
+    if (!deptSubs.length && !deptEmps.length && dept.id > 0) continue;
 
     // 收集该大部门的所有行
     const deptRowKeys = Object.keys(_qcDeptRows).filter(k => k.startsWith(dept.id + '_'));
@@ -234,7 +297,7 @@ function renderQcDeptTables() {
           const priceVal = row[sub.id] ?? '';
           if (isWage) {
             html += `<td class="qc-price-cell" style="text-align:center;background:#f0fdf4;">
-              <div class="cell-input qc-price-display" title="${priceVal === '' ? '' : '￥' + Number(priceVal).toFixed(2)}">${priceVal === '' ? '' : '￥' + Number(priceVal).toFixed(2)}</div>
+              <div class="cell-input qc-price-display" title="${priceVal === '' ? '' : '￥' + Number(priceVal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 20, useGrouping: false })}">${priceVal === '' ? '' : '￥' + Number(priceVal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 20, useGrouping: false })}</div>
             </td>`;
           } else {
             html += `<td class="qc-price-cell" style="text-align:center;background:#f0fdf4;">
@@ -255,7 +318,7 @@ function renderQcDeptTables() {
           const qtyKey = `${rowKey},${emp.id}`;
           const qty = _qcState.qtyData[qtyKey] || 0;
           const empSubPrice = row[emp.sub_dept_id] || 0;
-          const wage = roundNumber(qty * empSubPrice);
+          const wage = wageAmount(qty, empSubPrice);
 
           if (isWage) {
             const displayVal = hasQcValue(_qcState.qtyData[qtyKey]) ? fmtCompact(wage) : '';
@@ -297,18 +360,18 @@ function renderQcDeptTables() {
     // 累加该大部门的合计
     for (const rowKey of sortedRowKeys) {
       const row = _qcDeptRows[rowKey] || {};
-      const deptEmps2 = employees.filter(e => e.dept_id === dept.id);
+      const deptEmps2 = employees.filter(e => e.dept_id === getQcSheetDeptId(dept.id));
       for (const emp of deptEmps2) {
         const qtyKey = `${rowKey},${emp.id}`;
         const qty = _qcState.qtyData[qtyKey] || 0;
         const subPrice = row[emp.sub_dept_id] || 0;
-        grandTotal += qty * subPrice;
+        grandTotal += wageCents(qty, subPrice);
       }
     }
   }
 
   wrap.innerHTML = html;
-  document.getElementById('qcGrandTotal').textContent = '¥' + fmt(grandTotal);
+  document.getElementById('qcGrandTotal').textContent = '¥' + fmt(Number(grandTotal) / 100);
   window.LmsSpreadsheet?.mount(wrap, 'quick-calc');
 }
 
@@ -637,7 +700,7 @@ function onQcQtyTab(e, el) {
 function updateDeptRowTotals(rowKey) {
   const deptId = parseInt(rowKey.split('_')[0]);
   const row = _qcDeptRows[rowKey] || {};
-  const deptEmps = _qcState.employees.filter(e => e.dept_id === deptId);
+  const deptEmps = _qcState.employees.filter(e => e.dept_id === getQcSheetDeptId(deptId));
   const isWage = _qcState.qcViewMode === 'wage';
 
   let doneQty = 0;
@@ -649,7 +712,7 @@ function updateDeptRowTotals(rowKey) {
 
     // 更新该成员的工资显示（工资视角下）
     if (isWage) {
-      const wage = roundNumber(qty * empSubPrice);
+      const wage = wageAmount(qty, empSubPrice);
       const displayVal = hasQcValue(_qcState.qtyData[qtyKey]) ? fmtCompact(wage) : '';
       const allDisplays = document.querySelectorAll(`.wage-cell-display[data-key="${qtyKey}"]`);
       for (const d of allDisplays) {
@@ -678,9 +741,9 @@ function updateDeptRowTotals(rowKey) {
   }
 
   // 更新全厂合计
-  let grandTotal = 0;
-  for (const dept of _qcState.departments) {
-    const dEmps = _qcState.employees.filter(e => e.dept_id === dept.id);
+  let grandTotal = 0n;
+  for (const dept of getQcSheets()) {
+    const dEmps = _qcState.employees.filter(e => e.dept_id === getQcSheetDeptId(dept.id));
     const dRowKeys = Object.keys(_qcDeptRows).filter(k => k.startsWith(dept.id + '_'));
     for (const rk of dRowKeys) {
       const r = _qcDeptRows[rk];
@@ -688,11 +751,11 @@ function updateDeptRowTotals(rowKey) {
         const qtyKey = `${rk},${emp.id}`;
         const qty = _qcState.qtyData[qtyKey] || 0;
         const subPrice = r[emp.sub_dept_id] || 0;
-        grandTotal += qty * subPrice;
+        grandTotal += wageCents(qty, subPrice);
       }
     }
   }
-  document.getElementById('qcGrandTotal').textContent = '¥' + fmt(grandTotal);
+  document.getElementById('qcGrandTotal').textContent = '¥' + fmt(Number(grandTotal) / 100);
   if (!isQcRowUsed(rowKey)) delete _qcDeptRows[rowKey];
 }
 

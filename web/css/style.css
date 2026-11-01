@@ -2019,6 +2019,8 @@ body * {
 .sheet-cell-search button { width: 22px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text); font-size: var(--font-size-18); cursor: pointer; }
 .sheet-cell-search button:hover:not(:disabled) { background: var(--surface-muted); color: var(--primary); }
 .sheet-cell-search button:disabled { opacity: .35; cursor: default; }
+.qc-sync-months { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 12px 0; }
+.qc-sync-months label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
 #view-quickcalc #qcDeptTablesWrap { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 #view-quickcalc #qcDeptTablesWrap .lms-sheet-host { flex: 1; height: auto; min-height: 0; }
 .lms-sheet-actions.qc-selection-actions { position: relative; display: inline-flex; padding: 0; border: 0; background: transparent; }

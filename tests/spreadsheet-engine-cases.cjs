@@ -141,7 +141,7 @@ module.exports = async ({ evaluate, call, delay, mouse, key }) => {
   assert.equal(await evaluate(`isQcRowUsed('1_2') && _qcState.qtyData['1_2,2']===6`),true,'仅末列有值的新行也在用');
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,4).getCellStyleData().fs`),13,'粘贴不引入源字体字号');
   assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,4).getCellStyleData().fs`),13,'新增行的空格也使用本表字号');
-  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3).getCellStyleData().n.pattern`),'#,##0.00','单价保留本表小数格式');
+  assert.equal(await evaluate(`LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3).getCellStyleData().n.pattern`),'#,##0.00###############','单价保留本表格式并显示实际小数位');
   await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,3,1,3).setValues([[null,null,null]])`);
   await evaluate(`void LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(1,3,2,3).setValues([[3.75,12,13],[2.5,7,8]])`);
   const blankPoint = await evaluate(`(() => {const rect=LmsSpreadsheet.getInstance('qcDeptTablesWrap').book.getActiveSheet().getRange(3,4).getCellRect();const canvas=Array.from(document.querySelectorAll('#qcDeptTablesWrap canvas'),el=>el.getBoundingClientRect()).sort((a,b)=>b.width*b.height-a.width*a.height)[0];return {x:canvas.x+rect.x+rect.width/2,y:canvas.y+rect.y+rect.height/2};})()`);

@@ -1,7 +1,72 @@
 """所有数据库 CRUD 操作"""
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
+from contextlib import closing
 
 from services.db import get_connection
+
+
+def money(value):
+    """金额按十进制四舍五入到分，避免二进制浮点和银行家舍入。"""
+    return Decimal(str(value or 0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
+def line_money(quantity, price):
+    return money(Decimal(str(quantity or 0)) * Decimal(str(price or 0)))
+
+
+def get_quick_calc_sheets(year: int, month: int):
+    with closing(get_connection()) as conn:
+        rows = conn.execute('''SELECT s.id, s.name, s.dept_id FROM quick_calc_sheets s
+            JOIN quick_calc_sheet_periods p ON s.id=p.sheet_id
+            WHERE p.year=? AND p.month=? ORDER BY s.id''', (year, month)).fetchall()
+    return [{"id": -r["id"], "name": r["name"], "dept_id": r["dept_id"]} for r in rows]
+
+
+def create_quick_calc_sheet(year: int, month: int, name: str, dept_id: int):
+    if not 2000 <= year <= 2200 or not 1 <= month <= 12 or not name.strip() or len(name.strip()) > 40:
+        raise ValueError('请填写有效年月与工作表名称（最多40字）')
+    with closing(get_connection()) as conn, conn:
+        if not conn.execute('SELECT 1 FROM departments WHERE id=?', (dept_id,)).fetchone():
+            raise ValueError('所属部门不存在')
+        if conn.execute('''SELECT 1 FROM quick_calc_sheets s JOIN quick_calc_sheet_periods p ON s.id=p.sheet_id
+            WHERE p.year=? AND p.month=? AND s.name=?''', (year, month, name.strip())).fetchone():
+            raise ValueError('当前月份已有同名工作表')
+        if conn.execute('SELECT 1 FROM departments WHERE name=?', (name.strip(),)).fetchone():
+            raise ValueError('工作表名称不能与部门工作表重名')
+        cur = conn.execute('INSERT INTO quick_calc_sheets(name,dept_id) VALUES (?,?)', (name.strip(), dept_id))
+        conn.execute('INSERT INTO quick_calc_sheet_periods VALUES (?,?,?)', (cur.lastrowid, year, month))
+        return {"ok": True, "sheet": {"id": -cur.lastrowid, "name": name.strip(), "dept_id": dept_id}}
+
+
+def sync_quick_calc_sheet(sheet_id: int, source_year: int, source_month: int, targets: list):
+    if sheet_id >= 0 or not targets or len(targets) > 120:
+        raise ValueError('请选择自定义工作表和目标日期')
+    periods = set()
+    for target in targets:
+        year, month = int(target['year']), int(target['month'])
+        if not 2000 <= year <= 2200 or not 1 <= month <= 12:
+            raise ValueError('同步日期无效')
+        periods.add((year, month))
+    with closing(get_connection()) as conn, conn:
+        sheet = conn.execute('''SELECT s.* FROM quick_calc_sheets s JOIN quick_calc_sheet_periods p ON s.id=p.sheet_id
+            WHERE s.id=? AND p.year=? AND p.month=?''', (-sheet_id, source_year, source_month)).fetchone()
+        if not sheet:
+            raise ValueError('来源日期没有此工作表')
+        # 先检查所有目标，再原子地添加关联；已有工作表/工资数据均保留。
+        for year, month in periods:
+            conflict = conn.execute('''SELECT 1 FROM quick_calc_sheets s JOIN quick_calc_sheet_periods p ON s.id=p.sheet_id
+                WHERE p.year=? AND p.month=? AND s.name=? AND s.id<>?''', (year, month, sheet['name'], -sheet_id)).fetchone()
+            if conflict:
+                raise ValueError(f'{year}年{month}月已有另一个同名工作表')
+        before = conn.total_changes
+        conn.executemany('INSERT OR IGNORE INTO quick_calc_sheet_periods VALUES (?,?,?)',
+                         [(-sheet_id, year, month) for year, month in periods])
+        return {"ok": True, "added": conn.total_changes - before}
+
+
+def _qc_department_prefixes(year, month, dept_id):
+    return tuple([f'{dept_id}_'] + [f"{s['id']}_" for s in get_quick_calc_sheets(year, month) if s['dept_id'] == dept_id])
 
 # ── 全局设置 ────────────────────────────────────────────
 
@@ -353,7 +418,7 @@ def _get_adjustment_items(conn, emp_id: int, year: int, month: int):
 
 def _build_adjustment_summary(items: list[dict]):
     total_quantity = round(sum(float(item.get("adj_quantity") or 0) for item in items), 2)
-    total_amount = round(sum(float(item.get("adj_amount") or 0) for item in items), 2)
+    total_amount = float(sum((money(item.get("adj_amount")) for item in items), Decimal(0)))
     reasons = [str(item.get("reason") or "").strip() for item in items]
     reasons = [reason for reason in reasons if reason]
     return {
@@ -505,27 +570,28 @@ def _get_employee_qc_history(conn, emp):
         qty_data = saved["qty_data"] if saved and saved.get("qty_data") else {}
 
         # 计算该员工在该月快捷计算中的工资
-        empWage = 0
+        empWage = Decimal(0)
         empPairs = 0
         records = []
+        prefixes = _qc_department_prefixes(year, month, dept_id)
         for rowKey, row in dept_rows.items():
-            if not rowKey.startswith(str(dept_id) + "_"):
+            if not rowKey.startswith(prefixes):
                 continue
             qtyKey = f"{rowKey},{emp_id}"
             qty = qty_data.get(qtyKey, 0)
             if qty > 0:
                 subPrice = row.get(sub_dept_id, 0)
-                empWage += qty * subPrice
+                empWage += line_money(qty, subPrice)
                 empPairs += qty
                 records.append({
                     "order_no": "来自快捷计算",
                     "model_no": "来自快捷计算",
                     "quantity": qty,
                     "unit_price": subPrice,
-                    "line_wage": round(qty * subPrice, 2),
+                    "line_wage": float(line_money(qty, subPrice)),
                 })
 
-        empWage = round(empWage, 2)
+        empWage = float(money(empWage))
 
         # 该月增扣
         adj_summary = _build_adjustment_summary(_get_adjustment_items(conn, emp_id, year, month))
@@ -540,7 +606,7 @@ def _get_employee_qc_history(conn, emp):
             "adj_amount": adj_summary["adj_amount"],
             "adj_reason": adj_summary["reason"],
             "adjustments": adj_summary["adjustments"],
-            "total": round(empWage + adj_summary["adj_amount"], 2),
+            "total": float(money(Decimal(str(empWage)) + Decimal(str(adj_summary["adj_amount"])))),
         })
 
     return {
@@ -1233,12 +1299,13 @@ def get_qc_salary_summary(year: int, month: int):
 
     # 获取人工增扣
     adj_raw = conn.execute("""
-        SELECT emp_id, COALESCE(SUM(adj_amount), 0) AS adj_amount
+        SELECT emp_id, adj_amount
         FROM salary_adjustments
         WHERE year=? AND month=?
-        GROUP BY emp_id
     """, (year, month)).fetchall()
-    adj_map = {r["emp_id"]: r["adj_amount"] for r in adj_raw}
+    adj_map = {}
+    for r in adj_raw:
+        adj_map[r["emp_id"]] = adj_map.get(r["emp_id"], Decimal(0)) + money(r["adj_amount"])
     conn.close()
 
     # 按大部门分组
@@ -1251,27 +1318,28 @@ def get_qc_salary_summary(year: int, month: int):
                 "dept_name": emp["dept_name"],
                 "employees": [],
                 "total_pairs": 0,
-                "total_wage": 0
+                "total_wage": Decimal(0)
             }
 
         # 计算该员工在该月快捷计算中的工资
-        empWage = 0
+        empWage = Decimal(0)
         empPairs = 0
         # 遍历该大部门的所有行
+        prefixes = _qc_department_prefixes(year, month, did)
         for rowKey, row in dept_rows.items():
-            if not rowKey.startswith(str(did) + "_"):
+            if not rowKey.startswith(prefixes):
                 continue
             qtyKey = f"{rowKey},{emp['id']}"
             qty = qty_data.get(qtyKey, 0)
             if qty > 0:
                 # 该员工所属小部门的单价（JSON反序列化后key为字符串）
                 subPrice = row.get(str(emp["sub_dept_id"]), 0)
-                empWage += qty * subPrice
+                empWage += line_money(qty, subPrice)
                 empPairs += qty
 
-        empWage = round(empWage, 2)
+        empWage = float(money(empWage))
         adj = adj_map.get(emp["id"], 0)
-        total = round(empWage + adj, 2)
+        total = float(money(Decimal(str(empWage)) + Decimal(str(adj))))
 
         departments[did]["employees"].append({
             "emp_id": emp["id"],
@@ -1279,13 +1347,13 @@ def get_qc_salary_summary(year: int, month: int):
             "sub_dept_name": emp["sub_dept_name"],
             "pairs": empPairs,
             "wage": empWage,
-            "adj_amount": adj,
+            "adj_amount": float(adj),
             "total": total
         })
         departments[did]["total_pairs"] += empPairs
-        departments[did]["total_wage"] += total
+        departments[did]["total_wage"] += money(total)
 
     for d in departments.values():
-        d["total_wage"] = round(d["total_wage"], 2)
+        d["total_wage"] = float(money(d["total_wage"]))
 
     return list(departments.values())

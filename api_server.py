@@ -435,6 +435,41 @@ async def api_save_quick_calc(payload: dict):
     )
 
 
+@app.get('/api/quick-calc-sheets')
+async def api_qc_sheets(year: int, month: int):
+    return crud.get_quick_calc_sheets(year, month)
+
+
+class QuickCalcSheetCreate(BaseModel):
+    year: int
+    month: int
+    name: str
+    dept_id: int
+
+
+class QuickCalcSheetSync(BaseModel):
+    sheet_id: int
+    source_year: int
+    source_month: int
+    targets: List[dict]
+
+
+@app.post('/api/quick-calc-sheets')
+async def api_create_qc_sheet(payload: QuickCalcSheetCreate):
+    try:
+        return crud.create_quick_calc_sheet(payload.year, payload.month, payload.name, payload.dept_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post('/api/quick-calc-sheets/sync')
+async def api_sync_qc_sheet(payload: QuickCalcSheetSync):
+    try:
+        return crud.sync_quick_calc_sheet(payload.sheet_id, payload.source_year, payload.source_month, payload.targets)
+    except (ValueError, KeyError, TypeError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 @app.get("/api/quick-calc-save")
 async def api_load_quick_calc(year: int, month: int):
     return crud.load_quick_calc(year, month)
